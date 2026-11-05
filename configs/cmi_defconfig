@@ -1,0 +1,35 @@
+# cmi 内核配置
+#
+# 语法：CONFIG_XNU_<NAME> 在内核构建中变成 XNU_<NAME>；{tree} 会替换为构建树路径。
+# 层序（见 docs/zh/reference/configuration.md）：arch 片段 → soc 片段 → os 片段 →
+# 本 defconfig 最后应用，同名设置以这里为准。
+#
+# 本文件只写有出处或已在同 SoC 家族验证过的开关；未列的项取片段默认值。
+
+# 源码内核闭包（模板值）
+CONFIG_XNU_SOURCE_CORECRYPTO14=y
+CONFIG_XNU_SOURCE_PTHREAD=y
+CONFIG_XNU_ARM_DT_PLATFORM=y
+CONFIG_XNU_ARMCPU=y
+
+# 格式 2 用 OS 配置里的预链接输入，不用源码重建 crypto
+CONFIG_XNU_CRYPTO_BOOTSTRAP="prelinked"
+
+# ARM 架构定时器：SM8250 用 arch timer 提供 per-CPU 计时
+CONFIG_XNU_NATIVE_ARCH_TIMER=y
+
+# SM8250 实现 PAN，copyin/copyout 必须在异常入口处理
+CONFIG_XNU_NATIVE_PAN=y
+
+# BCM2837 构建目标要求该开关；未设为 n 会回退到它固定的 panic 物理地址
+CONFIG_XNU_DT_PANIC_REGION=y
+
+# 存储：ShengUfs 尚未选中（personality 只认 qcom,sm8550-ufshc），先关闭
+# CONFIG_XNU_NATIVE_UFS is not set
+
+# GPU：SM8250 是 Adreno 650，组件目录只有 A740 实现
+# CONFIG_XNU_NATIVE_ADRENO is not set
+
+# 显示：走固件 GOP framebuffer，不需要原生显示驱动
+# CONFIG_XNU_NATIVE_LEGACY_DISPLAY is not set
+# CONFIG_XNU_NATIVE_MOBILE_DISPLAY is not set

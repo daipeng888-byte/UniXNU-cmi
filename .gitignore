@@ -1,0 +1,8 @@
+# 本机覆盖与生成产物
+local.toml
+out/
+.cache/
+*.dtb
+
+# 设备转储：只保留在本地，用 VERIFY.md 里的命令重新生成
+probe/

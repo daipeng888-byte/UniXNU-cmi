@@ -1,0 +1,93 @@
+name: package
+
+# scripts/package.sh of this repository on a macOS runner, with the UniXNU and uefi-cmi
+# checkouts beside it, the layout board.toml names. The platform seed comes from the
+# repository secret UNIXNU_UNIQUE_CHIP_ID and is baked into the images, so the run's
+# artifacts belong to one device alone: download them, then delete the run.
+#
+# Adapted from UniXNU-sheng's package.yml. NOT YET RUN: cmi has no cmiPkg and no pinned
+# UniXNU revision, so every `ref:` below is a placeholder that must be replaced by a
+# reviewed commit before this workflow can produce anything.
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: "OS profile of the images"
+        type: choice
+        options: ["17"]
+        default: "17"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: macos-26
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: device
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          ref: REQUIRED_UNIXNU_COMMIT
+          path: UniXNU
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: REQUIRED_OWNER/uefi-cmi
+          ref: REQUIRED_UEFI_COMMIT
+          path: uefi-cmi
+          submodules: recursive
+      - name: tools
+        run: |
+          brew install dtc llvm lld cmake mtools ninja bison pkgconf blacktop/tap/ipsw
+          {
+            echo "/opt/homebrew/opt/llvm/bin"
+            echo "/opt/homebrew/opt/lld/bin"
+            echo "/opt/homebrew/opt/bison/bin"
+          } >> "$GITHUB_PATH"
+          ok=1
+          for t in clang xcodebuild make git ninja cmake dtc fdtget fdtput aea compression_tool \
+                   mformat mcopy ipsw; do
+            command -v "$t" >/dev/null || { echo "missing tool: $t"; ok=0; }
+          done
+          for t in lld-link llvm-lib llvm-rc llvm-nm llvm-objcopy; do
+            [ -f "/opt/homebrew/opt/llvm/bin/$t" ] || [ -f "/opt/homebrew/opt/lld/bin/$t" ] || { echo "missing tool: $t"; ok=0; }
+          done
+          [ "$ok" = 1 ]
+      - name: platform seed
+        env:
+          seed: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
+        run: |
+          if ! [[ "$seed" =~ ^[0-9a-fA-F]{8,16}$ ]]; then
+            echo 'Set the repository secret UNIXNU_UNIQUE_CHIP_ID: the platform seed of the device, hex digits.' >&2
+            exit 1
+          fi
+      - name: package
+        working-directory: device
+        env:
+          UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OS_PROFILE: ${{ inputs.os }}
+        run: |
+          args=(--os "$OS_PROFILE" --uefi ../uefi-cmi)
+          scripts/package.sh "${args[@]}"
+      - name: images
+        uses: actions/upload-artifact@v4
+        with:
+          name: images-${{ inputs.os }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            UniXNU/out/cmi/*/*/boot/boot.img
+            UniXNU/out/cmi/*/*/payload/payload.img
+            UniXNU/out/cmi/*/*/kernel/kernel.macho
+            UniXNU/out/cmi/*/*/package.manifest.json

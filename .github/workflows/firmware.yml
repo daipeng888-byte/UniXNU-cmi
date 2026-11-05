@@ -1,0 +1,91 @@
+name: firmware
+
+# 只编固件卷（不跑 kernel/payload/bootimg），用于拿到 SILICIUM_UEFI.fd 先看点不点得亮。
+#
+# 为什么不是 build_uefi.py：那个脚本要求 Platforms/*/cmiPkg/DeviceBuild.py，而 umiPkg 里
+# 就没有这个文件；而且它引用的 UniXNUPkg / DarwinBootPkg 不在 uefi-umi 仓里，在 UniXNU 树里。
+# 所以唯一可行的是 UniXNU 的 firmware 步骤。
+#
+# 未运行验证：第一次跑请看日志。EDK2 部分理论只需 clang/lld + nasm + iasl + dtc，
+# 不需要 macOS，也不需要 setup-toolchain.py 里那套给 XNU 编译用的补丁版 clang。
+
+on:
+  workflow_dispatch:
+    inputs:
+      unixnu_ref:
+        description: "UniXNU 的提交（40 位）"
+        required: true
+      uefi_ref:
+        description: "uefi 仓库的分支或提交"
+        required: false
+        default: main
+      uefi_repository:
+        description: "uefi 仓库名（同属主）：fork uefi-umi 后保持 uefi-umi，改名了就填新名"
+        required: false
+        default: "uefi-umi"
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: 工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git python3 python3-pip python3-venv \
+            clang lld llvm nasm acpica-tools uuid-dev \
+            device-tree-compiler mtools bison flex pkg-config libssl-dev zlib1g-dev
+          for t in clang lld-link llvm-objcopy nasm iasl dtc make mformat python3; do
+            command -v "$t" >/dev/null || { echo "missing tool: $t"; exit 1; }
+          done
+
+      - uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          ref: ${{ inputs.unixnu_ref }}
+          path: UniXNU
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ inputs.uefi_repository }}
+          ref: ${{ inputs.uefi_ref }}
+          path: uefi-cmi
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          path: UniXNU-cmi
+
+      - name: 解析配置
+        run: |
+          ./unixnu defconfig cmi_defconfig -D ../UniXNU-cmi
+          ./unixnu status --json -D ../UniXNU-cmi > status.json
+          python3 - <<'PY'
+          import json
+          s = json.load(open("status.json"))
+          print("output:", s.get("output"))
+          print("profiles:", s.get("profiles"))
+          print("components:", s.get("components"))
+          PY
+
+      - name: 构建固件
+        run: ./unixnu firmware -D ../UniXNU-cmi --uefi ../uefi-cmi
+
+      - name: 定位并上传 FD
+        id: fd
+        run: |
+          fd=$(find out -name 'SILICIUM_UEFI.fd' -print -quit)
+          [ -n "$fd" ] || { echo "SILICIUM_UEFI.fd not found"; find out -name '*.fd' | head; exit 1; }
+          echo "path=$fd" >> "$GITHUB_OUTPUT"
+          ls -l "$fd"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cmi-uefi-fd
+          path: ${{ steps.fd.outputs.path }}
+          if-no-files-found: error

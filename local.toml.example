@@ -1,0 +1,7 @@
+# 复制为 local.toml（被 Git 忽略）以把整个类别指向本地目录。
+# 每个子目录是一个模块；命令行（--local、--local-drivers 等）优先于本文件。
+[local]
+# 本地修改 sm8250-common 时指向检出目录，例如：
+# soc = "D:/hos/sm8250-common"
+drivers = "D:/hos/dev/drivers"
+kits = "D:/hos/dev/kits"

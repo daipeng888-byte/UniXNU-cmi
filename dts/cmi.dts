@@ -1,0 +1,154 @@
+/*
+ * Xiaomi Mi 10 Pro (cmi) — 板级设备树
+ *
+ * 结构取自 examples/device/dts/board.dts；值的来源见 inputs.md。
+ *
+ * ADT 生成器（scripts/unixnu/devicetree.py）的硬约束：
+ *   - 恰好一个启用的 memory 节点，且恰好一段 reg；
+ *   - board.toml 的 [payload] dram_size 必须等于这段 reg 的 size，否则报
+ *     "payload.dram_size differs from the hardware DTS"；
+ *   - /cpus 必须提供 timebase-frequency（在 sm8250.dtsi）；
+ *   - 多于一个 CPU 必须有 /psci。
+ *
+ * 待完成：reserved-memory 的 no-map / reusable 属性需按原厂 DTS 核对。
+ * panel / touch 片段（dts/panel-*.dtsi、dts/touch-*.dtsi）暂未 include：
+ * 生成器只导出带 unixnu,adt-name 的节点，且只按白名单复制属性，
+ * 等对应驱动适配到那一步再接。
+ */
+
+/dts-v1/;
+
+/include/ "sm8250.dtsi"
+
+/ {
+	model = "Xiaomi Mi 10 Pro (cmi)";
+	compatible = "xiaomi,cmi", "qcom,sm8250";
+
+	/*
+	 * 实测三 bank：
+	 *   0x80000000 + 0x3bb00000
+	 *   0xc0000000 + 0xc0000000
+	 *   0x180000000 + 0x100000000
+	 * 三者之间有一个 0x4500000（69 MiB）的洞（0xbbb00000..0xc0000000）。
+	 *
+	 * 生成器要求单段连续范围，故取 base 0x80000000、size = 各 bank 之和
+	 * 0x1fbb00000（不把洞算作 DRAM；与 umi 在 SM8250 上的取值口径一致）。
+	 * 该 size 必须与 board.toml 的 [payload] dram_size 完全相同。
+	 */
+	memory@80000000 {
+		device_type = "memory";
+		/* 2 个地址 cell + 2 个大小 cell：size = 0x1_fbb00000 */
+		reg = <0x0 0x80000000 0x1 0xfbb00000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		hyp_region: hyp_region@80000000 {
+			reg = <0x0 0x80000000 0x0 0x00600000>;
+		};
+
+		xbl_aop_region: xbl_aop_region@80600000 {
+			reg = <0x0 0x80600000 0x0 0x00260000>;
+		};
+
+		reserved_memblock: reserved-memory@80860000 {
+			reg = <0x0 0x80860000 0x0 0x00020000>;
+		};
+
+		res_xbl_uefi_log: res_xbl_uefi_log_region@80880000 {
+			reg = <0x0 0x80880000 0x0 0x00014000>;
+		};
+
+		smem_region: smem_region@80900000 {
+			reg = <0x0 0x80900000 0x0 0x00200000>;
+		};
+
+		removed_region: removed_region@80b00000 {
+			reg = <0x0 0x80b00000 0x0 0x05300000>;
+		};
+
+		pil_camera_region: pil_camera_region@86200000 {
+			reg = <0x0 0x86200000 0x0 0x00500000>;
+		};
+
+		pil_wlan_fw_region: pil_wlan_fw_region@86700000 {
+			reg = <0x0 0x86700000 0x0 0x00100000>;
+		};
+
+		pil_ipa_fw_region: pil_ipa_fw_region@86800000 {
+			reg = <0x0 0x86800000 0x0 0x00010000>;
+		};
+
+		pil_ipa_gsi_region: pil_ipa_gsi_region@86810000 {
+			reg = <0x0 0x86810000 0x0 0x0000a000>;
+		};
+
+		pil_gpu_region: pil_gpu_region@8681a000 {
+			reg = <0x0 0x8681a000 0x0 0x00002000>;
+		};
+
+		pil_npu_region: pil_npu_region@86900000 {
+			reg = <0x0 0x86900000 0x0 0x00500000>;
+		};
+
+		pil_video_region: pil_video_region@86e00000 {
+			reg = <0x0 0x86e00000 0x0 0x00500000>;
+		};
+
+		pil_cvp_region: pil_cvp_region@87300000 {
+			reg = <0x0 0x87300000 0x0 0x00500000>;
+		};
+
+		pil_cdsp_region: pil_cdsp_region@87800000 {
+			reg = <0x0 0x87800000 0x0 0x01400000>;
+		};
+
+		pil_slpi_region: pil_slpi_region@88c00000 {
+			reg = <0x0 0x88c00000 0x0 0x02f00000>;
+		};
+
+		pil_adsp_region: pil_adsp_region@8bb00000 {
+			reg = <0x0 0x8bb00000 0x0 0x02500000>;
+		};
+
+		pil_spss_region: pil_spss_region@8e000000 {
+			reg = <0x0 0x8e000000 0x0 0x00100000>;
+		};
+
+		cdsp_secure_heap: cdsp_secure_heap@8e100000 {
+			reg = <0x0 0x8e100000 0x0 0x04600000>;
+		};
+
+		/* Splash 交接：XNU 从这里取 UEFI 已初始化的显示内容。
+		 * no-map 沿用参考板型（sheng.dts 的 framebuffer 节点）的做法。 */
+		cont_splash_region: cont_splash_region@9c000000 {
+			reg = <0x0 0x9c000000 0x0 0x02300000>;
+			no-map;
+		};
+
+		dfps_data_region: dfps_data_region@9e300000 {
+			reg = <0x0 0x9e300000 0x0 0x00100000>;
+		};
+
+		/*
+		 * 原厂节点名是 disp_rdump_region@9c000000（与 cont_splash_region 撞名），
+		 * 但它的 reg 基址实际是 0xb0400000。这里按 reg 改名，消除 dtc 的
+		 * duplicate unit-address 警告。
+		 */
+		disp_rdump_region: disp_rdump_region@b0400000 {
+			reg = <0x0 0xb0400000 0x0 0x01000000>;
+		};
+	};
+};
+
+/* SoC dtsi 里默认 disabled，由板级启用（与 UniXNU-sheng 的写法一致）。 */
+&ufs {
+	status = "okay";
+};
+
+&ufsphy {
+	status = "okay";
+};

@@ -1,0 +1,10 @@
+# 固件输入：相对路径 | 来源 | SHA-256 | 使用方
+#
+# 每项都取自本板固件包；未取得的留 REQUIRED_，不要填写猜测值。
+#
+# 触摸固件（节点 fts,default-fw-name 指向的文件名，实测）
+REQUIRED_TOUCH_FIRMWARE_PATH | vendor firmware | REQUIRED_TOUCH_FIRMWARE_SHA256 | input / ShengHidInput
+#
+# GPU 固件：SM8250 为 Adreno 650，当前没有选中 GPU 组件，暂不需要
+#
+# 基带与 modem：cellular 部分尚未开始

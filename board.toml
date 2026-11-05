@@ -1,0 +1,77 @@
+# Xiaomi Mi 10 Pro (cmi) / SM8250 — 格式 2 设备配置
+#
+# 本文件按 examples/device/board.toml 逐项改写，未新增模板外的键。
+# 已实测值见 inputs.md；标 REQUIRED_ 的项按文档取自目标设备或原厂 DTS。
+# 文档：docs/zh/porting/device-repository.md、docs/zh/reference/configuration.md
+
+schema_version = 2
+
+[board]
+name = "cmi"
+soc = "SM8250"
+# 依赖 UniXNU-sm8250-common（当前不存在，需先按 SoC 支持步骤建立）
+soc_source = "sm8250"
+os_profile = "ipados-17.7.11-21H461"
+description = "Xiaomi Mi 10 Pro (cmi) / SM8250"
+kit = "cmi"
+# 置 true 时 build/bootimg 会拒绝；占位符填完后保持省略或 false。
+
+[components]
+# 模板默认值；需按组件目录逐项核对 SM8250 / cmi 硬件范围后增删。
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+
+[kernel]
+defconfig = "cmi_defconfig"
+
+config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
+patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches/xnu/series", "device:patches/xnu/series"]
+
+[device_tree]
+source = "device:dts/cmi.dts"
+include_dirs = ["soc:dts"]
+
+[firmware]
+# cmiPkg 尚不存在：从 uefi-umi 的 Platforms/Xiaomi/umiPkg 派生，改面板/按键/板 ID。
+config = "cmi"
+dsc = "Platforms/Xiaomi/cmiPkg/cmi.dsc"
+fd = "Build/cmiPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
+packages = ["{uefi}", "{tree}/package", "{tree}/drivers/DarwinBoot", "{edk2}"]
+
+[bootimg]
+# 启动镜像的固件 DTB，由固件 preflight 脚本生成（docs/porting/packaging.md）。
+dtb = "build/cmi/cmi.dtb"
+
+# 启动镜像设备树：原有 bootloader 需要固件树中没有的节点。
+# 值取自设备 DT 的 /reserved-memory/cont_splash_region（0x9c000000 + 0x2300000）。
+[[bootimg.dtb_node]]
+path = "/reserved-memory/splash_region"
+props = [
+  { name = "label", type = "s", value = "cont_splash_region" },
+  { name = "reg", type = "x", value = ["0x0", "0x9c000000", "0x0", "0x2300000"] },
+]
+
+[firmware.defines]
+DEVICE_MODEL = "cmi"
+
+[payload]
+volume = "CMIXNU"
+size_mib = 192
+loader = "firmware"
+title = "Mi 10 Pro"
+kernel_args = ["-v", "serial=3"]
+# 三 bank 求和，实测见 inputs.md 第 3 节（本机 8 GB SKU）。
+# 12 GB SKU 需重新求和。
+dram_size = "0x1FBB00000"
+
+[package]
+# 相对本仓库的 UniXNU checkout；scripts/package.sh 读取。
+unixnu = "../UniXNU"
+
+[package.defconfig]
+"ipados-17.7.11-21H461" = "cmi_defconfig"
+
+[payload.adt]
+# 生成器按十六进制解析：chip = int(str(chip_id), 16)。
+# 实测 qcom,msm-id = 0x164，故写作 "164"（模板示例 "207" 即 0x207）。
+chip_id = "164"
+unique_chip_id = "required"

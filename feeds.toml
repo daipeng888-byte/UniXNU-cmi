@@ -1,0 +1,6 @@
+[[source]]
+name = "sm8250"
+kind = "soc"
+git = "https://github.com/REQUIRED_OWNER/UniXNU-sm8250-common"
+# 本机已有骨架：D:\hos\sm8250-common，发布后再固定 40 位提交。
+commit = "REQUIRED_SOC_COMMIT"

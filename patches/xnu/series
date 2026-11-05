@@ -1,0 +1,7 @@
+# cmi 板级 XNU 补丁序列，每行一个相对本目录的路径，按行序应用。
+#
+# 当前为空：cmi 尚无需要板级修复的 XNU 行为。空 series 是合法状态
+# （见 docs/zh/porting/device-repository.md「有序配置和补丁」）。
+#
+# 注意：board.toml 的 [kernel] patch_series 引用了 device:patches/xnu/series，
+# 所以本文件必须存在，即使内容为空。

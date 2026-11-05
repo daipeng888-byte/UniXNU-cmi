@@ -1,0 +1,305 @@
+schema_version = 1
+
+[device]
+name = "cmi"
+soc = "SM8250"
+os_profile = "ipados-17.7.11-21H461"
+summary = "Xiaomi Mi 10 Pro (cmi), SM8250, 8 GB SKU. Host-side static checks only; no build and no device boot yet."
+
+# Status policy for this record: no commit exists yet, so no area can claim
+# host-verified or device-verified (both require a full 40-character revision).
+# Everything measured so far is recorded under inputs/configuration/findings,
+# and the concrete next measurement is under next_action.
+
+[[area]]
+id = "configuration"
+status = "planned"
+components = []
+paths = ["board.toml", "feeds.toml", "configs/**", ".gitignore"]
+inputs = [
+  "Format 2 device config derived from examples/device/board.toml, not from umi (format 1, standalone repository).",
+  "SoC source is UniXNU-sm8250-common, which does not exist yet; feeds.toml commit is a placeholder.",
+  "OS profile ipados-17.7.11-21H461 exists in the UniXNU tree and is shared with umi.",
+]
+configuration = [
+  "board.toml: schema_version = 2, board.name=cmi, board.soc=SM8250, board.soc_source=sm8250, board.kit=cmi.",
+  "kernel.defconfig=cmi_defconfig; config_fragments and patch_series follow the template layer order arch, soc, os, device.",
+  "Arrays replace inherited values, so every fragment and series entry is listed explicitly.",
+]
+procedure = [
+  "Validated board.toml parses with tomllib: schema_version 2, dram_size 0x1fbb00000, payload.adt.chip_id 164 (hex).",
+]
+findings = [
+  "payload.adt.chip_id is parsed as hexadecimal by scripts/unixnu/devicetree.py (int(str(chip_id), 16)); the template value 207 means 0x207, so cmi uses 164 = 0x164.",
+  "board.example must stay unset: build and bootimg reject example repositories.",
+]
+completion = ["All source pins resolve; every selected component belongs to an area; status shows intended overrides and patch order."]
+limits = [
+  "UniXNU-sm8250-common is not published, so feeds.toml cannot pin a reviewed commit.",
+  "configs/cmi_defconfig does not exist yet.",
+]
+next_action = ["Publish UniXNU-sm8250-common, then pin its 40-character commit in feeds.toml."]
+evidence = []
+
+[[area]]
+id = "firmware"
+status = "planned"
+components = ["DarwinBoot"]
+paths = ["dts/**", "proprietary-files.txt", "package/**"]
+inputs = [
+  "Android boot image: header version 1, 4096-byte pages (Xiaomi SM8250 convention, confirmed in the stock header).",
+  "Identity: qcom,msm-id 0x164 with SoC revision 0x00020001, qcom,board-id 0x24.",
+  "Splash handoff region: cont_splash_region 0x9c000000 size 0x2300000, taken from the device device tree.",
+  "Reference firmware package uefi-umi/Platforms/Xiaomi/umiPkg: Application/, Drivers/, Include/, Library/, umi.dec, umi.dsc, umi.fdf. Its DSC includes KonaPkg/KonaPkg.dsc.inc, so the SM8250 SoC layer is shared and only board PCDs and board drivers need changing.",
+]
+configuration = [
+  "[[bootimg.dtb_node]] adds /reserved-memory/splash_region with label cont_splash_region for the stock bootloader.",
+  "firmware.config=cmi, dsc=Platforms/Xiaomi/cmiPkg/cmi.dsc, fd=Build/cmiPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd.",
+]
+procedure = ["Compile the board DTS with dtc -I dts -O dtb -i <soc dts dir>; apply bootimg.dtb_node with fdtput via ./unixnu bootimg."]
+findings = [
+  "cmiPkg does not exist in uefi-umi; the closest base is umiPkg (same SM8250 platform), but panel init, key GPIOs and board ID are cmi-specific.",
+]
+completion = ["Firmware image builds, enters UniXNU, publishes the framebuffer and preserves the documented memory reservations."]
+limits = ["No uefi-cmi checkout, no cmiPkg, no firmware build."]
+next_action = ["Fork umiPkg into Platforms/Xiaomi/cmiPkg and replace panel init, key GPIOs and board ID."]
+evidence = []
+
+[[area]]
+id = "cpu"
+status = "planned"
+components = ["ArmCpu", "ArmDTPlatform"]
+paths = ["dts/sm8250.dtsi", "package/CpuFreq*"]
+inputs = [
+  "8 CPUs, compatible qcom,kryo, MPIDR affinity 0x0, 0x100, 0x200, 0x300, 0x400, 0x500, 0x600, 0x700 (device DT /cpus/cpu@N).",
+  "GICD 0x17a00000 size 0x10000; GICR 0x17a60000 size 0x100000; redistributor-stride 0x20000 (device DT).",
+  "PSCI method smc (device DT /psci).",
+]
+configuration = [
+  "dts/sm8250.dtsi declares /cpus with timebase-frequency, /psci, and the GIC node with unixnu,adt-name = \"intc\" and phandle 1.",
+  "Each CPU carries unixnu,cluster-type: cpu@0-300 are \"E\" and cpu@400-700 are \"P\", derived from the measured capacity-dmips-mhz values 0x1c0 versus 0x3fe-0x400.",
+  "The interrupt-controller at 0x0b220000 is qcom,kona-pdc, not GICR, and is deliberately not exported yet.",
+]
+procedure = ["dtc compiles the tree; check_adt.py confirms 8 CPUs, timebase-frequency present, psci method valid, phandle unique."]
+findings = [
+  "timebase-frequency is absent from the vendor device tree; 19200000 is the SM8250 architectural timer constant and is unverified on hardware.",
+  "#address-cells is not in the ADT property whitelist and was dropped from the GIC node.",
+]
+completion = ["Every enabled CPU reaches its entry checkpoint and timer/IPI handling works on each enabled CPU."]
+limits = ["No kernel build; timer frequency not measured on device."]
+next_action = ["Read the arch timer frequency from a booted kernel log or a hardware measurement, then confirm or correct timebase-frequency."]
+evidence = []
+
+[[area]]
+id = "memory"
+status = "planned"
+components = ["SoftwareAES"]
+paths = ["dts/cmi.dts", "dts/sm8250.dtsi", "package/*Smmu*", "package/*Memory*"]
+inputs = [
+  "Three DRAM banks: 0x80000000+0x3bb00000, 0xc0000000+0xc0000000, 0x180000000+0x100000000.",
+  "Bank sum 0x1fbb00000 (7.93 GiB); a 0x4500000 (69 MiB) hole sits at 0xbbb00000..0xc0000000.",
+  "22 reserved-memory regions with base and size read from the device tree, including cont_splash_region, dfps_data_region and disp_rdump_region.",
+]
+configuration = [
+  "cmi.dts declares exactly one enabled memory node with one reg range: base 0x80000000, size 0x1fbb00000.",
+  "payload.dram_size in board.toml equals that size; the ADT generator rejects any difference.",
+]
+procedure = ["dtc compiles the tree; check_adt.py verifies one memory node, single range and exact dram_size equality."]
+findings = [
+  "The ADT generator requires one contiguous DRAM range, so the three banks are expressed as their sum rather than the 0x200000000 span; the hole is not declared as DRAM.",
+  "reserved-memory no-map and reusable attributes are not set: they were not measured and affect whether the kernel may allocate those ranges.",
+]
+completion = ["All handoff regions are accounted for and each enabled DMA engine accesses its allocated range with the documented cache policy."]
+limits = ["no-map/reusable per region unknown; SMMU ownership and DMA bit width not inventoried."]
+next_action = ["Read the no-map/reusable flags from the vendor device tree and set them per region before any XNU boot."]
+evidence = []
+
+[[area]]
+id = "storage"
+status = "planned"
+components = []
+paths = ["drivers/ShengUfs", "scripts/*ufs*", "scripts/*storage*", "scripts/*userdata*"]
+inputs = [
+  "UFS host: compatible qcom,ufshc, reg 0x1d84000+0x3000 and 0x1d90000+0x8000 (ICE), interrupt SPI 0x109 level-high, lanes-per-direction 2.",
+  "userdata GPT entry: first_lba 0x2C0000, last_lba 0x3B4B7FA, lba_bytes 4096 (measured on this handset, 226.18 GiB).",
+  "Device storage: sda 254.7 GB with super 8.5 GiB of dynamic partitions.",
+]
+configuration = [
+  "dts/sm8250.dtsi defines ufs (label ufs, unixnu,adt-name ufshc, interrupt-parent <&intc>) and ufsphy (0x1d87000, qcom,ufs-phy-qmp-v4); both default to disabled.",
+  "dts/cmi.dts enables them with &ufs { status = \"okay\"; } and &ufsphy { status = \"okay\"; }, the pattern used by UniXNU-sheng.",
+  "board.toml [userdata] carries the measured geometry; [payload.adt] root_match_volume_uuid stays unset until a volume is chosen.",
+]
+procedure = ["GPT was read by dumping 8 sectors of /dev/block/sda and parsing the header on the host, because TWRP ships no sgdisk, parted or fdisk."]
+findings = [
+  "ShengUfs personality uses IONameMatch qcom,sm8550-ufshc while cmi reports qcom,ufshc, so the driver will not bind without a component-side change.",
+  "ShengUfs is SM8550-specific (controller access, SMMU takeover, GccUfs clock states); SM8250 constants have not been compared.",
+]
+completion = ["Host: register, clock, link and SMMU facts match the board inventory. Reads: capacity, GPT and known blocks correct. Root: volume mounts and launchd starts."]
+limits = ["No PHY, clock, reset, regulator or SMMU inventory; no component build.", "Candidate ShengUfs is not selected: it targets SM8550 and its personality does not match qcom,ufshc."]
+next_action = ["Inventory SM8250 UFS PHY, GCC clock IDs, reset and SMMU stream, then compare against ShengUfs constants."]
+evidence = []
+
+[[area]]
+id = "display"
+status = "planned"
+components = []
+paths = ["dts/panel-*.dtsi", "package/*Display*", "package/*Framebuffer*", "scripts/*display*"]
+inputs = [
+  "Panel selected by the bootloader: msm_drm.dsi_display0=qcom,mdss_dsi_j2_p2_1_38_0c_0a_dsc_cmd.",
+  "Timings: 1080x2340, 24 bpp, 60 Hz (clock 681489024 Hz) and 90 Hz, DSC command mode, mi,panel-id 0x4a32.",
+  "Panel GPIOs: reset GPIO 12, TE GPIO 66; rails vci, vddio, dvdd, lab, ibb.",
+  "DCS init, off and timing-switch sequences copied byte-exact from the device tree into dts/panel-j2-p2-1-38-0c-0a.dtsi.",
+]
+configuration = [
+  "GopFramebuffer reads the firmware GOP framebuffer through PE_current_console, so it consumes no device-tree node; no mdss or dsi node is declared.",
+  "Panel initialization therefore belongs to the firmware package (cmiPkg), not to the ADT.",
+]
+procedure = ["Panel node was extracted with tools/fdt2dts.py from /sys/firmware/fdt pulled in TWRP."]
+findings = [
+  "Adding an mdss node to the SoC DTSI would be dead weight for the GOP path; the display work is firmware-side.",
+  "Android cross-check: dumpsys display reports 1080x2340, 60/90 Hz, density 440, HDR types 1-4, 420 nits peak.",
+]
+completion = ["A known frame appears with correct geometry and colors, then userland presentation and backlight controls work."]
+limits = ["cmiPkg does not exist, so no panel init runs under UEFI; the panel dtsi fragment is not included by any compiled tree.", "Candidate GopFramebuffer is not selected until a firmware package exists to hand over GOP."]
+next_action = ["Port the panel init sequence into cmiPkg and verify framebuffer handoff after UEFI display initialization."]
+evidence = []
+
+[[area]]
+id = "input"
+status = "planned"
+components = []
+paths = ["dts/touch-fts49.dtsi", "drivers/ShengHidInput", "package/*Touch*", "package/*Button*"]
+inputs = [
+  "Touch controller st,fts at i2c@a94000, address 0x49, interrupt hwirq 39 with flags 0x2008.",
+  "reset GPIO 38, irq GPIO 39, rails named vdd (bus) and avdd (power), firmware st_fts_j1.ftb, x-max 1080 / y-max 2340.",
+  "Key GPIOs are not inventoried yet.",
+]
+configuration = [
+  "dts/touch-fts49.dtsi is a reference transcription only: the reference device repository (UniXNU-sheng) exports no touch node, so touch binds through board package state, not through the ADT.",
+]
+procedure = ["Node extracted with tools/fdt2dts.py; properties read from /proc/device-tree in TWRP."]
+findings = [
+  "cmi uses the same ST FTS family as umi, so umi's FTS transport work is a candidate for reuse; its always-on PM8150B GPIO5 power trick is cmi-unverified.",
+  "ShengHidInput binds on board-level touch state and the IOHIDFamily 2031.120.4 ABI; the ABI record is required for the archive build.",
+]
+completion = ["Touches map to the display, simultaneous contacts keep stable IDs, release events arrive, and buttons produce expected HID reports."]
+limits = ["No i2c or tlmm node in the SoC DTSI; regulator wiring and firmware loading path unverified.", "Candidate ShengHidInput is not selected until the bus nodes exist and the IOHIDFamily ABI record is provided."]
+next_action = ["Add the i2c bus and tlmm nodes to the SoC DTSI from measured values, then wire the touch node."]
+evidence = []
+
+[[area]]
+id = "gpu"
+status = "not-applicable"
+components = []
+paths = ["package/*Adreno*", "scripts/*adreno*"]
+inputs = ["SM8250 pairs with Adreno 650; no UniXNU GPU implementation targets this part."]
+configuration = ["No GPU component selected; Adreno740 and AdrenoMetal cover A740/SM8550 only."]
+procedure = ["None yet."]
+findings = ["Selecting Adreno740 here would misreport the hardware range."]
+completion = []
+limits = ["Out of scope until a GPU component declares SM8250 support; framebuffer output does not need one."]
+next_action = ["None."]
+evidence = []
+
+[[area]]
+id = "network"
+status = "planned"
+components = []
+paths = ["drivers/Ath12kWifi", "package/*Wifi*", "scripts/*wifi*"]
+inputs = ["WLAN chip and firmware are not inventoried; cnss_wlan_region and pil_wlan_fw_region exist in the device tree."]
+configuration = ["No component selected."]
+procedure = ["None yet."]
+findings = ["Ath12kWifi is the only Wi-Fi implementation in the catalog and targets a different part."]
+completion = ["Scanning, association, address configuration and sustained traffic pass with the selected firmware."]
+limits = ["Hardware identification pending."]
+next_action = ["Identify the WLAN chip from the vendor device tree or a booted Android log."]
+evidence = []
+
+[[area]]
+id = "cellular"
+status = "planned"
+components = []
+paths = ["package/*Modem*", "scripts/*modem*"]
+inputs = ["The handset has a modem partition and mdm1m9kefs1-4; modem firmware and EFS are not inventoried."]
+configuration = ["No component selected."]
+procedure = ["None yet."]
+findings = ["QcomBaseband documents an SC7180 IPA path; SM8250 applicability is unproven."]
+completion = ["Modem firmware loads, QRTR/QMI services answer, SIM identity is read and a data session completes."]
+limits = ["Hardware identification and firmware extraction pending; last in the adaptation order.", "Candidate QcomBaseband is not selected: its documented IPA data path is SC7180, SM8250 applicability unproven."]
+next_action = ["None until storage and root are verified."]
+evidence = []
+
+[[area]]
+id = "audio"
+status = "planned"
+components = []
+paths = ["package/*Audio*", "package/*Adsp*", "scripts/*audio*"]
+inputs = ["Device tree shows bolero codec, wsa/rx/tx macros and cs35l41 amplifiers; ADSP firmware not inventoried."]
+configuration = ["No component selected."]
+procedure = ["None yet."]
+findings = ["Audio depends on ADSP bring-up, which is not implemented for SM8250."]
+completion = ["Each declared route carries the selected format through playback or capture and handles start/stop correctly."]
+limits = ["Last in the adaptation order."]
+next_action = ["None until platform, storage and display are verified."]
+evidence = []
+
+[[area]]
+id = "power"
+status = "planned"
+components = []
+paths = ["package/*Battery*", "package/*Power*", "package/*PlatformPower*"]
+inputs = ["PMIC topology not inventoried; device tree shows pm8150-class regulators used by display and touch."]
+configuration = ["No component selected."]
+procedure = ["None yet."]
+findings = ["umi qualified a 512 MiB conventional window and a 256 MiB DarwinBoot allocation on the same SoC; cmi payload windows are still unvalidated."]
+completion = ["Declared power controls and battery readings match observations; each claimed sleep/resume transition restores its dependent peripherals."]
+limits = ["Sleep/resume and battery are unverified; owned_memory_size is still the template value."]
+next_action = ["Validate the payload memory window on hardware before claiming any power feature."]
+evidence = []
+
+[[area]]
+id = "packaging"
+status = "planned"
+components = ["XnuPrelink"]
+paths = ["patches/**", "package/Kit.toml", "scripts/*payload*", "scripts/*image*"]
+inputs = [
+  "OS donor: iPad7,1 / iPadOS 17.7.11 / 21H461 / j120ap, ApChipID 0x8011, ApBoardID 12.",
+  "kernel.prelink pins kernelcache sha256 f18b4df8... and early_security_init com.apple.driver.AppleMobileFileIntegrity=0xfffffff005ab4ae0.",
+]
+configuration = [
+  "[payload] volume CMIXNU, size 192 MiB, loader firmware, kernel_args -v serial=3.",
+  "[kernel] archives is not set yet; when set it must list every kernel stage recipe in order.",
+]
+procedure = ["dtc compiles the board DTS; check_adt.py validates the generator preconditions."]
+findings = [
+  "Hardware DTS compiles clean with dtc 1.8.1 and passes the seven precondition checks.",
+  "The ADT itself has never been generated: that needs a UniXNU checkout and make-adt.py.",
+]
+completion = ["Kernel and prelink succeed, payload contains all declared inputs, and the boot image matches the bootloader format and size limit."]
+limits = ["No kernel build, no archive list, no payload or boot image."]
+next_action = ["Run ./unixnu defconfig, fetch, status --json and tree against a real UniXNU checkout."]
+evidence = []
+
+[[area]]
+id = "diagnostics"
+status = "planned"
+components = []
+paths = ["cmi/probe/**", "tools/**"]
+inputs = [
+  "TWRP recovery shell over adb (serial b7c8640e) provides root for GPT, device tree and bootargs reads.",
+  "Android 14 on this handset is a user build: no su, no Magisk/KernelSU, adb root refused, dmesg and /proc/cmdline denied to shell.",
+]
+configuration = ["tools/fdt2dts.py converts an FDT blob to dts; tools/check_adt.py replays the generator preconditions."]
+procedure = [
+  "dd if=/dev/block/sda bs=4096 count=8, then pull and parse the GPT header on the host.",
+  "adb pull /sys/firmware/fdt, then python tools/fdt2dts.py to produce a 37,086-line dts.",
+  "cat /proc/device-tree/chosen/bootargs to read the bootloader panel selector.",
+]
+findings = [
+  "fdtdump rejects fdt.cmi.dtb with 'header is not valid' although the header is valid; the self-written parser is used instead.",
+  "dtc from the MSYS2 package needs libyaml-0-2.dll at load time even for -O dts; the DLL was added next to dtc.exe.",
+]
+completion = ["Each claimed milestone has a reproducible command, a matching source/image revision and an accessible result."]
+limits = ["No logs are committed and no 40-character revision exists, so no area can be host-verified yet."]
+next_action = ["Commit tools and probe records, then attach the exact commands and revision to each area's evidence."]
+evidence = []
