@@ -1,31 +1,43 @@
 name: firmware
 
-# 只编固件卷（不跑 kernel/payload/bootimg），用于拿到 SILICIUM_UEFI.fd 先看点不点得亮。
+# 只编固件卷（不跑 kernel/payload/bootimg），目标是先拿到 SILICIUM_UEFI.fd 看能不能点亮。
 #
-# 为什么不是 build_uefi.py：那个脚本要求 Platforms/*/cmiPkg/DeviceBuild.py，而 umiPkg 里
-# 就没有这个文件；而且它引用的 UniXNUPkg / DarwinBootPkg 不在 uefi-umi 仓里，在 UniXNU 树里。
-# 所以唯一可行的是 UniXNU 的 firmware 步骤。
+# 触发方式：
+#   1) 推送本文件到 main 时自动触发（一次），这样只需要 push 就能开跑，不用点 Run workflow
+#   2) 手动 Run workflow，可覆盖下面 env 里的默认值
+#
+# 为什么不是 build_uefi.py：那个脚本要求 Platforms/*/cmiPkg/DeviceBuild.py（umiPkg 里没有），
+# 而且它引用的 UniXNUPkg / DarwinBootPkg 不在 uefi-umi 仓里，在 UniXNU 树里。
+# 所以唯一可行的是 UniXNU 自己的 firmware 步骤。
 #
 # 未运行验证：第一次跑请看日志。EDK2 部分理论只需 clang/lld + nasm + iasl + dtc，
 # 不需要 macOS，也不需要 setup-toolchain.py 里那套给 XNU 编译用的补丁版 clang。
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/firmware.yml'
   workflow_dispatch:
     inputs:
       unixnu_ref:
-        description: "UniXNU 的提交（40 位）"
-        required: true
+        description: "UniXNU 的提交（留空用 env 默认）"
+        required: false
       uefi_ref:
-        description: "uefi 仓库的分支或提交"
+        description: "uefi 仓库的分支或提交（留空用 env 默认）"
         required: false
-        default: main
       uefi_repository:
-        description: "uefi 仓库名（同属主）：fork uefi-umi 后保持 uefi-umi，改名了就填新名"
+        description: "uefi 仓库名（留空用 env 默认）"
         required: false
-        default: "uefi-umi"
 
 permissions:
   contents: read
+
+env:
+  # 固定版本：UniXNU main 在 2026-11-05 的提交
+  DEFAULT_UNIXNU_REF: 18155b4e441b68d54f841f08b7633f90822eb596
+  DEFAULT_UEFI_REPO: uefi-umi
+  DEFAULT_UEFI_REF: main
 
 jobs:
   firmware:
@@ -43,23 +55,39 @@ jobs:
             command -v "$t" >/dev/null || { echo "missing tool: $t"; exit 1; }
           done
 
+      - name: 解析目标仓库
+        id: target
+        env:
+          IN_UNIXNU: ${{ inputs.unixnu_ref }}
+          IN_UEFI_REF: ${{ inputs.uefi_ref }}
+          IN_UEFI_REPO: ${{ inputs.uefi_repository }}
+        run: |
+          echo "unixnu_ref=${IN_UNIXNU:-$DEFAULT_UNIXNU_REF}" >> "$GITHUB_OUTPUT"
+          echo "uefi_ref=${IN_UEFI_REF:-$DEFAULT_UEFI_REF}"     >> "$GITHUB_OUTPUT"
+          echo "uefi_repo=${IN_UEFI_REPO:-$DEFAULT_UEFI_REPO}"   >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
           repository: UniXNU/UniXNU
-          ref: ${{ inputs.unixnu_ref }}
+          ref: ${{ steps.target.outputs.unixnu_ref }}
           path: UniXNU
           submodules: recursive
 
       - uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/${{ inputs.uefi_repository }}
-          ref: ${{ inputs.uefi_ref }}
+          repository: ${{ github.repository_owner }}/${{ steps.target.outputs.uefi_repo }}
+          ref: ${{ steps.target.outputs.uefi_ref }}
           path: uefi-cmi
           submodules: recursive
 
       - uses: actions/checkout@v4
         with:
           path: UniXNU-cmi
+
+      - name: 确认 uefi 树里有 cmiPkg
+        run: |
+          test -f uefi-cmi/Platforms/Xiaomi/cmiPkg/cmi.dsc \
+            || { echo "uefi-cmi/Platforms/Xiaomi/cmiPkg/cmi.dsc 不存在——cmiPkg 还没推到 uefi 仓库"; exit 1; }
 
       - name: 解析配置
         run: |
@@ -80,7 +108,7 @@ jobs:
         id: fd
         run: |
           fd=$(find out -name 'SILICIUM_UEFI.fd' -print -quit)
-          [ -n "$fd" ] || { echo "SILICIUM_UEFI.fd not found"; find out -name '*.fd' | head; exit 1; }
+          [ -n "$fd" ] || { echo "SILICIUM_UEFI.fd not found"; find out -name '*.fd' 2>/dev/null | head; exit 1; }
           echo "path=$fd" >> "$GITHUB_OUTPUT"
           ls -l "$fd"
 
