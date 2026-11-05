@@ -31,11 +31,23 @@ source = "device:dts/cmi.dts"
 include_dirs = ["soc:dts"]
 
 [firmware]
-# cmiPkg 尚不存在：从 uefi-umi 的 Platforms/Xiaomi/umiPkg 派生，改面板/按键/板 ID。
+# cmiPkg 在 Platforms/Xiaomi 下，与上游 umiPkg 同级；cmi.dsc 的 INF 写成 umiPkg/...、
+# FLASH_DEFINITION 写成 cmiPkg/cmi.fdf，所以 PACKAGES_PATH 必须含 {uefi}/Platforms/Xiaomi。
 config = "cmi"
 dsc = "Platforms/Xiaomi/cmiPkg/cmi.dsc"
 fd = "Build/cmiPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
-packages = ["{uefi}", "{tree}/package", "{tree}/drivers/DarwinBoot", "{edk2}"]
+# PACKAGES_PATH 必须能解析 DSC 链里引用的每个 package：
+#   cmi.dsc 的 !include KonaPkg/KonaPkg.dsc.inc         -> {uefi}/Silicon/Qualcomm
+#   KonaPkg.dsc.inc 的 !include QcomPkg/QcomPkg.dsc.inc -> {uefi}/Silicon/Qualcomm
+#   cmiPkg/cmi.fdf 与 umiPkg/... 的 INF                 -> {uefi}/Platforms/Xiaomi
+#   SiliciumPkg / SiliciumNullPkg 的 INF                -> {uefi}/Silicon/Silicium
+#   UniXNUPkg（{tree}/package）、DarwinBootPkg（{tree}/drivers/DarwinBoot）
+# 列法照参考设备 reAAAq/UniXNU-umi 的 [firmware] packages（它还多列 Common/Mu 两项）。
+packages = [
+  "{uefi}", "{uefi}/Platforms/Xiaomi", "{tree}/package", "{tree}/drivers/DarwinBoot", "{edk2}",
+  "{uefi}/Common/Mu", "{uefi}/Common/Mu_OEM_Sample",
+  "{uefi}/Silicon/Qualcomm", "{uefi}/Silicon/Silicium",
+]
 
 [bootimg]
 # 启动镜像的固件 DTB，由固件 preflight 脚本生成（docs/porting/packaging.md）。
@@ -51,7 +63,15 @@ props = [
 ]
 
 [firmware.defines]
-DEVICE_MODEL = "cmi"
+# FD_BASE / FD_SIZE / FD_BLOCKS 由 scripts/unixnu/firmware.py 从
+# Resources/Configs/cmi.toml 的 [uefi_fd] 自动补，不写在这里。
+# 下面四项取参考设备 umi 的同一组语义：research 固件、无 SecureBoot、开内存保护、非出货。
+ENABLE_SECUREBOOT = "0"
+MEMORY_PROTECTION = "TRUE"
+SHIP_MODE = "FALSE"
+# umi 写数字 0；板名已经在 DSC 的 SMBIOS RetailModel / BoardModel 里是 cmi。
+DEVICE_MODEL = "0"
+BUILDID_STRING = "cmi-menu-research"
 
 [payload]
 volume = "CMIXNU"

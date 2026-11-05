@@ -1,17 +1,16 @@
 name: firmware
 
-# 只编固件卷（不跑 kernel/payload/bootimg），目标是先拿到 SILICIUM_UEFI.fd 看能不能点亮。
+# 只编固件卷（不跑 kernel/payload/bootimg），目标是拿到 SILICIUM_UEFI.fd 先看点不点得亮。
 #
-# 触发方式：
-#   1) 推送本文件到 main 时自动触发（一次），这样只需要 push 就能开跑，不用点 Run workflow
-#   2) 手动 Run workflow，可覆盖下面 env 里的默认值
+# 为什么不是 build_uefi.py：那个脚本要求 Platforms/*/cmiPkg/DeviceBuild.py，而 umiPkg 里
+# 就没有这个文件；而且它引用的 UniXNUPkg / DarwinBootPkg 不在 uefi-umi 仓里，在 UniXNU 树里。
+# 所以走 UniXNU 的 firmware 步骤（scripts/unixnu/firmware.py）。
 #
-# 为什么不是 build_uefi.py：那个脚本要求 Platforms/*/cmiPkg/DeviceBuild.py（umiPkg 里没有），
-# 而且它引用的 UniXNUPkg / DarwinBootPkg 不在 uefi-umi 仓里，在 UniXNU 树里。
-# 所以唯一可行的是 UniXNU 自己的 firmware 步骤。
-#
-# 未运行验证：第一次跑请看日志。EDK2 部分理论只需 clang/lld + nasm + iasl + dtc，
-# 不需要 macOS，也不需要 setup-toolchain.py 里那套给 XNU 编译用的补丁版 clang。
+# 下面三处是对着 UniXNU 源码核过的、第一次跑必踩的点：
+#   1. unixnu 在 UniXNU 检出的根目录里，不在 workspace 根 -> 每一步都 cd UniXNU；
+#   2. firmware.py 通过 package.edk2_dir() 取 edk2，没有 --edk2 且 feeds 没 pin 时会直接
+#      raise "no edk2 tree"；Mu_Basecore 是 uefi-umi 的子模块，所以传 --edk2 ../uefi-cmi/Mu_Basecore；
+#   3. FD 落在 uefi 检出里（Build/<dsc 名>/<target>_CLANGPDB/FV/），不在 out/ 下。
 
 on:
   push:
@@ -21,20 +20,20 @@ on:
   workflow_dispatch:
     inputs:
       unixnu_ref:
-        description: "UniXNU 的提交（留空用 env 默认）"
+        description: "UniXNU 的提交（40 位，留空用 env 默认）"
         required: false
       uefi_ref:
         description: "uefi 仓库的分支或提交（留空用 env 默认）"
         required: false
       uefi_repository:
-        description: "uefi 仓库名（留空用 env 默认）"
+        description: "uefi 仓库名（同属主；留空用 env 默认）"
         required: false
 
 permissions:
   contents: read
 
 env:
-  # 固定版本：UniXNU main 在 2026-11-05 的提交
+  # UniXNU main 在 2026-11-05 的提交；升级时改这一行。
   DEFAULT_UNIXNU_REF: 18155b4e441b68d54f841f08b7633f90822eb596
   DEFAULT_UEFI_REPO: uefi-umi
   DEFAULT_UEFI_REF: main
@@ -54,63 +53,78 @@ jobs:
           for t in clang lld-link llvm-objcopy nasm iasl dtc make mformat python3; do
             command -v "$t" >/dev/null || { echo "missing tool: $t"; exit 1; }
           done
+          python3 -c 'import sys; assert sys.version_info >= (3, 11), sys.version'
 
-      - name: 解析目标仓库
-        id: target
-        env:
-          IN_UNIXNU: ${{ inputs.unixnu_ref }}
-          IN_UEFI_REF: ${{ inputs.uefi_ref }}
-          IN_UEFI_REPO: ${{ inputs.uefi_repository }}
-        run: |
-          echo "unixnu_ref=${IN_UNIXNU:-$DEFAULT_UNIXNU_REF}" >> "$GITHUB_OUTPUT"
-          echo "uefi_ref=${IN_UEFI_REF:-$DEFAULT_UEFI_REF}"     >> "$GITHUB_OUTPUT"
-          echo "uefi_repo=${IN_UEFI_REPO:-$DEFAULT_UEFI_REPO}"   >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@v4
+      - name: 检出 UniXNU
+        uses: actions/checkout@v4
         with:
           repository: UniXNU/UniXNU
-          ref: ${{ steps.target.outputs.unixnu_ref }}
+          ref: ${{ inputs.unixnu_ref || env.DEFAULT_UNIXNU_REF }}
           path: UniXNU
           submodules: recursive
 
-      - uses: actions/checkout@v4
+      - name: 检出 uefi（含 Mu_Basecore 子模块）
+        uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/${{ steps.target.outputs.uefi_repo }}
-          ref: ${{ steps.target.outputs.uefi_ref }}
+          repository: ${{ github.repository_owner }}/${{ inputs.uefi_repository || env.DEFAULT_UEFI_REPO }}
+          ref: ${{ inputs.uefi_ref || env.DEFAULT_UEFI_REF }}
           path: uefi-cmi
           submodules: recursive
 
-      - uses: actions/checkout@v4
+      - name: 检出任一设备仓库（本仓库）
+        uses: actions/checkout@v4
         with:
           path: UniXNU-cmi
 
-      - name: 确认 uefi 树里有 cmiPkg
+      - name: 确认 cmiPkg 与非空子模块
         run: |
           test -f uefi-cmi/Platforms/Xiaomi/cmiPkg/cmi.dsc \
-            || { echo "uefi-cmi/Platforms/Xiaomi/cmiPkg/cmi.dsc 不存在——cmiPkg 还没推到 uefi 仓库"; exit 1; }
+            || { echo "uefi-cmi/Platforms/Xiaomi/cmiPkg/cmi.dsc 不存在——cmiPkg 还没推上去"; exit 1; }
+          test -f uefi-cmi/Mu_Basecore/MdePkg/MdePkg.dec \
+            || { echo "Mu_Basecore 子模块为空——checkout 没带 recursive 或子模块不可访问"; exit 1; }
+          ls uefi-cmi/Binaries >/dev/null 2>&1 \
+            || echo "警告：uefi 检出里没有 Binaries 目录；若 cmiPkg 引用了 Binaries/umi 会在链接期失败"
 
       - name: 解析配置
+        working-directory: UniXNU
         run: |
           ./unixnu defconfig cmi_defconfig -D ../UniXNU-cmi
-          ./unixnu status --json -D ../UniXNU-cmi > status.json
-          python3 - <<'PY'
-          import json
-          s = json.load(open("status.json"))
-          print("output:", s.get("output"))
-          print("profiles:", s.get("profiles"))
-          print("components:", s.get("components"))
-          PY
+          ./unixnu status --json -D ../UniXNU-cmi > ../status.json
+          python3 -c "import json;s=json.load(open('../status.json'));print('output', s['output']);print('profiles', s['profiles']);print('modules', len(s['modules']))"
 
       - name: 构建固件
-        run: ./unixnu firmware -D ../UniXNU-cmi --uefi ../uefi-cmi
+        working-directory: UniXNU
+        run: |
+          ./unixnu firmware -D ../UniXNU-cmi \
+            --uefi ../uefi-cmi \
+            --edk2 ../uefi-cmi/Mu_Basecore
 
       - name: 定位并上传 FD
         id: fd
         run: |
-          fd=$(find out -name 'SILICIUM_UEFI.fd' -print -quit)
-          [ -n "$fd" ] || { echo "SILICIUM_UEFI.fd not found"; find out -name '*.fd' 2>/dev/null | head; exit 1; }
-          echo "path=$fd" >> "$GITHUB_OUTPUT"
+          fd=uefi-cmi/Build/cmiPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd
+          if [ ! -f "$fd" ]; then
+            echo "没找到 $fd，列出实际产物："
+            find uefi-cmi/Build out -name '*.fd' -o -name '*.fv' 2>/dev/null | head -20
+            exit 1
+          fi
           ls -l "$fd"
+          echo "path=$fd" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -c %s "$fd")" >> "$GITHUB_OUTPUT"
+
+      - name: 校验 FD 尺寸与 uefi_fd
+        working-directory: UniXNU
+        run: |
+          python3 - <<'PY'
+          import os, tomllib
+          cfg = tomllib.load(open('../uefi-cmi/Resources/Configs/cmi.toml', 'rb'))
+          want = cfg['uefi_fd']['size']
+          got = int(os.environ['FD_SIZE'])
+          print(f'uefi_fd.size = {want:#x}  fd bytes = {got:#x}')
+          assert got == want, 'FD 尺寸与 Resources/Configs/cmi.toml 的 [uefi_fd] size 不一致'
+          PY
+        env:
+          FD_SIZE: ${{ steps.fd.outputs.size }}
 
       - uses: actions/upload-artifact@v4
         with:
