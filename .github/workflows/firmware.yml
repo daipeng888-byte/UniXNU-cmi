@@ -50,10 +50,34 @@ jobs:
             build-essential git python3 python3-pip python3-venv \
             clang lld llvm nasm acpica-tools uuid-dev \
             device-tree-compiler mtools bison flex pkg-config libssl-dev zlib1g-dev
-          for t in clang lld-link llvm-objcopy nasm iasl dtc make mformat python3; do
+          for t in nasm iasl dtc make python3; do
             command -v "$t" >/dev/null || { echo "missing tool: $t"; exit 1; }
           done
           python3 -c 'import sys; assert sys.version_info >= (3, 11), sys.version'
+
+      - name: CLANGPDB 工具自检
+        # scripts/unixnu/util.py 的 clang_bin() 需要 clang、lld-link、llvm-lib、llvm-rc
+        # 四个「无版本名」的可执行文件，缺一个就抛 "not found on PATH"。
+        # Ubuntu 的 llvm 包只保证带版本号的名字，所以这里按需补软链，再打印版本备查。
+        run: |
+          for t in clang lld-link llvm-lib llvm-rc; do
+            if ! command -v "$t" >/dev/null 2>&1; then
+              src=$(ls /usr/lib/llvm-*/bin/$t 2>/dev/null | sort -V | tail -1)
+              if [ -n "$src" ]; then
+                sudo ln -sf "$src" "/usr/local/bin/$t"
+                echo "补软链：/usr/local/bin/$t -> $src"
+              fi
+            fi
+            if ! command -v "$t" >/dev/null 2>&1; then
+              echo "缺少 CLANGPDB 工具：$t"
+              echo "已安装的 llvm-* 二进制："
+              ls /usr/lib/llvm-*/bin/ 2>/dev/null | sort -u | head -40
+              exit 1
+            fi
+            echo "$t -> $(command -v "$t")"
+          done
+          clang --version | head -1
+          lld-link --version | head -1
 
       - name: 检出 UniXNU
         uses: actions/checkout@v4
@@ -92,8 +116,19 @@ jobs:
           ./unixnu status --json -D ../UniXNU-cmi > ../status.json
           python3 -c "import json;s=json.load(open('../status.json'));print('output', s['output']);print('profiles', s['profiles']);print('modules', len(s['modules']))"
 
+      - name: 预取源（edk2、组件、SoC）
+        working-directory: UniXNU
+        # prepare() 会在这里做：子模块、feeds 解析、git 浅取。单独一步是为了把
+        # 「网络/可见性」和「EDK2 编译」分开归因，出问题一眼能看出是哪一类。
+        run: ./unixnu fetch -D ../UniXNU-cmi
+
+      - name: 汇出构建树
+        working-directory: UniXNU
+        run: ./unixnu tree -D ../UniXNU-cmi
+
       - name: 构建固件
         working-directory: UniXNU
+        # firmware.py 内部顺序：uefi_config -> (BaseTools 若未编) -> EDK2 build -> 校验 FD 尺寸
         run: |
           ./unixnu firmware -D ../UniXNU-cmi \
             --uefi ../uefi-cmi \
