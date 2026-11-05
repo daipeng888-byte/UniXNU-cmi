@@ -30,7 +30,8 @@ on:
         required: false
 
 permissions:
-  contents: read
+  # contents: write 只用于把失败日志推到 ci-logs 分支；正常构建不写仓库。
+  contents: write
 
 env:
   # UniXNU main 在 2026-11-05 的提交；升级时改这一行。
@@ -162,6 +163,35 @@ jobs:
           { cat /tmp/errs.txt; cat /tmp/tail.txt; } | head -10 | while IFS= read -r line; do
             if [ -n "$line" ]; then echo "::error::$line"; fi
           done
+
+      - name: 失败时把完整日志推到 ci-logs 分支
+        if: failure()
+        # 注解只能带十几行；完整日志走 ci-logs 分支，任何人用
+        # https://raw.githubusercontent.com/<owner>/<repo>/ci-logs/firmware.log 就能读。
+        run: |
+          work=$(mktemp -d)
+          {
+            echo "== run ${GITHUB_RUN_ID}  sha ${GITHUB_SHA}  attempt ${GITHUB_RUN_ATTEMPT}"
+            for f in $(find UniXNU/out -name '*.log' -type f 2>/dev/null | sort); do
+              echo
+              echo "===== $f"
+              tail -400 "$f"
+            done
+            echo
+            echo "===== 目录清单"
+            find UniXNU/out -maxdepth 6 -type d 2>/dev/null | head -40
+            ls -l uefi-cmi/Build 2>/dev/null || echo "(没有 uefi-cmi/Build)"
+          } > "$work/firmware.log" 2>&1
+          wc -l "$work/firmware.log"
+          cd "$work"
+          git init -q .
+          git checkout -q -b ci-logs
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git add -A
+          git -c user.name="ci log" -c user.email="ci@localhost" commit -q -m "log run ${GITHUB_RUN_ID} (${GITHUB_SHA:0:7})"
+          git push -q --force origin ci-logs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 定位并上传 FD
         id: fd
