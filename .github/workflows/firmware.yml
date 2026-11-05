@@ -134,6 +134,35 @@ jobs:
             --uefi ../uefi-cmi \
             --edk2 ../uefi-cmi/Mu_Basecore
 
+      - name: 失败时把日志尾巴发成注解
+        if: failure()
+        # Actions 日志下载需要认证，但 check-run 注解是公开可读的。
+        # 所以失败时把 out/ 下日志的关键行打成 ::error::，从注解接口就能看到真实报错。
+        run: |
+          tmp=$(mktemp)
+          {
+            for f in $(find UniXNU/out -name '*.log' -type f 2>/dev/null | sort); do
+              echo "== $f"
+              tail -30 "$f"
+            done
+            for f in $(find uefi-cmi/Build -name '*.log' -type f 2>/dev/null | sort | head -5); do
+              echo "== $f"
+              tail -30 "$f"
+            done
+          } > "$tmp" 2>&1
+          echo "---- 日志文件 ----"
+          grep '^== ' "$tmp" || echo "(没有任何日志文件)"
+          grep -iE 'error|not found|no such|failed|Traceback|raise |Exception' "$tmp" \
+            | grep -viE 'zero errors|errorlevel 0|No errors' | tail -6 | cut -c1-500 > /tmp/errs.txt || true
+          tail -4 "$tmp" | cut -c1-500 > /tmp/tail.txt || true
+          echo "---- 关键错误 ----"
+          cat /tmp/errs.txt || true
+          echo "---- 尾部 ----"
+          cat /tmp/tail.txt || true
+          { cat /tmp/errs.txt; cat /tmp/tail.txt; } | head -10 | while IFS= read -r line; do
+            if [ -n "$line" ]; then echo "::error::$line"; fi
+          done
+
       - name: 定位并上传 FD
         id: fd
         run: |

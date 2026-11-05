@@ -38,6 +38,7 @@ findings = [
   "board.toml [firmware] packages must list every PACKAGES_PATH root that the DSC chain includes, and [firmware.defines] carries the same research-build switch set the reference device umi passes (ENABLE_SECUREBOOT, MEMORY_PROTECTION, SHIP_MODE, DEVICE_MODEL, BUILDID_STRING); neither list is verified by a build yet.",
   "scripts/unixnu/util.py clang_bin() symlinks clang, lld-link, llvm-lib and llvm-rc into CLANG_BIN and raises \"not found on PATH\" for the first one missing, so the firmware job must provide unversioned names for all four; the workflow creates them from /usr/lib/llvm-*/bin when the distribution only ships versioned binaries.",
   "The firmware job runs fetch, tree and firmware as separate steps so a failure is attributable to source fetching, tree assembly or the EDK2 build without reading step logs.",
+  "Actions logs cannot be downloaded without authentication even on a public repository (403), but check-run annotations can be read anonymously; the firmware job therefore emits the tail of its build logs with ::error:: so tools/gh_annotations.py can read the real failure without a token.",
 ]
 completion = ["All source pins resolve; every selected component belongs to an area; status shows intended overrides and patch order."]
 limits = [
