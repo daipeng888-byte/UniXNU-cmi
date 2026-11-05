@@ -1,6 +1,11 @@
+# 额外源。格式 2 的 SoC 源必须在这里，key 由 board.toml 的 [board] soc_source 指定。
+# 形状对照 UniXNU-sheng 的 feeds.toml：kind = "soc"、name = soc_source、git、40 位 commit。
+# scripts/unixnu/feeds.py resolve_soc() 在缺 commit 时报
+# "soc source sm8250 needs a pinned commit"，所以 pin 是构建输入，不是注释。
+
 [[source]]
-name = "sm8250"
 kind = "soc"
-git = "https://github.com/REQUIRED_OWNER/UniXNU-sm8250-common"
-# 本机已有骨架：D:\hos\sm8250-common，发布后再固定 40 位提交。
-commit = "REQUIRED_SOC_COMMIT"
+name = "sm8250"
+git = "https://github.com/wangjiaxue001/UniXNU-sm8250-common.git"
+# 仓库私有：这是本机 D:\hos\sm8250-common 的 HEAD，也是已推送的那个提交。
+commit = "3f6034d21b4e5f6830c76ca4da4fe3b6fc0125fa"

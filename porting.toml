@@ -15,10 +15,10 @@ summary = "Xiaomi Mi 10 Pro (cmi), SM8250, 8 GB SKU. Host-side static checks onl
 id = "configuration"
 status = "planned"
 components = []
-paths = ["board.toml", "feeds.toml", "configs/**", ".gitignore"]
+paths = ["board.toml", "feeds.toml", "configs/**", ".gitignore", "local.toml.example", ".github/**"]
 inputs = [
   "Format 2 device config derived from examples/device/board.toml, not from umi (format 1, standalone repository).",
-  "SoC source is UniXNU-sm8250-common, which does not exist yet; feeds.toml commit is a placeholder.",
+  "SoC source is UniXNU-sm8250-common, pinned in feeds.toml at 3f6034d21b4e5f6830c76ca4da4fe3b6fc0125fa.",
   "OS profile ipados-17.7.11-21H461 exists in the UniXNU tree and is shared with umi.",
 ]
 configuration = [
@@ -32,13 +32,18 @@ procedure = [
 findings = [
   "payload.adt.chip_id is parsed as hexadecimal by scripts/unixnu/devicetree.py (int(str(chip_id), 16)); the template value 207 means 0x207, so cmi uses 164 = 0x164.",
   "board.example must stay unset: build and bootimg reject example repositories.",
+  "scripts/unixnu/feeds.py resolve_soc() looks up the feed by (kind = \"soc\", name = board.soc_source) and raises \"soc source sm8250 needs a pinned commit\" when neither feeds.toml nor unixnu.lock carries one, so the pin is a build input, not documentation.",
+  "The paths of this area also cover .github/**: scripts/porting-record.py check --base compares every non-Markdown path with the area patterns, and an unowned path fails with \"add its owner area and paths\".",
+  ".github/workflows/porting-record.yml only calls UniXNU/UniXNU/.github/workflows/porting-record.yml@main, so the checks that run here are the upstream ones: python3 tools/scripts/porting-record.py check --device device --base <before>.",
+  "board.toml [firmware] packages must list every PACKAGES_PATH root that the DSC chain includes, and [firmware.defines] carries the same research-build switch set the reference device umi passes (ENABLE_SECUREBOOT, MEMORY_PROTECTION, SHIP_MODE, DEVICE_MODEL, BUILDID_STRING); neither list is verified by a build yet.",
 ]
 completion = ["All source pins resolve; every selected component belongs to an area; status shows intended overrides and patch order."]
 limits = [
-  "UniXNU-sm8250-common is not published, so feeds.toml cannot pin a reviewed commit.",
-  "configs/cmi_defconfig does not exist yet.",
+  "The SoC repository is private, so the pinned commit cannot be fetched or reviewed from a host without credentials; the pin is only as good as that push.",
+  "The record was checked by replaying the rules of scripts/porting-record.py locally (tools/check_record.py); the official Porting record workflow has not yet run on this revision.",
+  "No UniXNU checkout exists on this host, so ./unixnu defconfig, fetch and status have never run against board.toml.",
 ]
-next_action = ["Publish UniXNU-sm8250-common, then pin its 40-character commit in feeds.toml."]
+next_action = ["Push this revision and confirm the Porting record check on the published commit, then run ./unixnu defconfig cmi_defconfig -D ../UniXNU-cmi in a real checkout."]
 evidence = []
 
 [[area]]
@@ -58,11 +63,19 @@ configuration = [
 ]
 procedure = ["Compile the board DTS with dtc -I dts -O dtb -i <soc dts dir>; apply bootimg.dtb_node with fdtput via ./unixnu bootimg."]
 findings = [
-  "cmiPkg does not exist in uefi-umi; the closest base is umiPkg (same SM8250 platform), but panel init, key GPIOs and board ID are cmi-specific.",
+  "cmiPkg is a line-for-line derivative of Platforms/Xiaomi/umiPkg: same !include KonaPkg/KonaPkg.dsc.inc, same library and driver list; only the SMBIOS PCDs, the stack base and the CCD flags differ.",
+  "scripts/unixnu/firmware.py runs \"build -p <firmware.dsc> -a AARCH64 -b <target> -t CLANGPDB\", then requires the file named by firmware.fd to exist and to be exactly uefi_fd.size bytes from Resources/Configs/cmi.toml (0x00300000 here); a base value in the config is only passed to the build as -D FD_BASE.",
+  "package.edk2_dir() raises \"no edk2 tree: pass --edk2 DIR (a Mu_Basecore checkout)\" when neither --edk2/UNIXNU_EDK2 nor a fetched refer edk2 module is present, and it then requires MdePkg/MdePkg.dec; Mu_Basecore is a submodule of uefi-umi, so a recursive checkout provides it.",
+  "The DSC chain needs PACKAGES_PATH entries that resolve KonaPkg and QcomPkg (Silicon/Qualcomm), umiPkg INFs and the FLASH_DEFINITION cmiPkg/cmi.fdf (Platforms/Xiaomi) and Silicium packages (Silicon/Silicium); board.toml [firmware] packages lists those roots.",
+  "The FD is written to <uefi>/Build/cmiPkg/<target>_CLANGPDB/FV/, not to the UniXNU output tree, because the DSC sets OUTPUT_DIRECTORY = Build/cmiPkg; a workflow that searches only out/ cannot find it.",
 ]
 completion = ["Firmware image builds, enters UniXNU, publishes the framebuffer and preserves the documented memory reservations."]
-limits = ["No uefi-cmi checkout, no cmiPkg, no firmware build."]
-next_action = ["Fork umiPkg into Platforms/Xiaomi/cmiPkg and replace panel init, key GPIOs and board ID."]
+limits = [
+  "No firmware build has run: clang, lld and make are absent on this host, and the workflow has never been triggered (the uefi fork reports zero workflow runs).",
+  "Every statement above comes from reading scripts/unixnu/firmware.py, package.py and cli.py at UniXNU main, not from a build log.",
+  "cmiPkg has no panel init and no backlight control yet; it reuses umiPkg panel-less GOP handoff, so the panel is whatever the stock bootloader leaves initialized.",
+]
+next_action = ["Dispatch the firmware workflow and read its first failure, then add cmi panel init and backlight to cmiPkg."]
 evidence = []
 
 [[area]]
@@ -196,7 +209,7 @@ inputs = ["SM8250 pairs with Adreno 650; no UniXNU GPU implementation targets th
 configuration = ["No GPU component selected; Adreno740 and AdrenoMetal cover A740/SM8550 only."]
 procedure = ["None yet."]
 findings = ["Selecting Adreno740 here would misreport the hardware range."]
-completion = []
+completion = ["No GPU milestone is claimed for cmi: framebuffer output through the firmware GOP does not need a GPU component, and nothing in the catalog targets Adreno 650."]
 limits = ["Out of scope until a GPU component declares SM8250 support; framebuffer output does not need one."]
 next_action = ["None."]
 evidence = []
@@ -261,7 +274,7 @@ evidence = []
 id = "packaging"
 status = "planned"
 components = ["XnuPrelink"]
-paths = ["patches/**", "package/Kit.toml", "scripts/*payload*", "scripts/*image*"]
+paths = ["patches/**", "package/Kit.toml", "scripts/*payload*", "scripts/*image*", "scripts/package.sh"]
 inputs = [
   "OS donor: iPad7,1 / iPadOS 17.7.11 / 21H461 / j120ap, ApChipID 0x8011, ApBoardID 12.",
   "kernel.prelink pins kernelcache sha256 f18b4df8... and early_security_init com.apple.driver.AppleMobileFileIntegrity=0xfffffff005ab4ae0.",
