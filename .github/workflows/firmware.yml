@@ -220,6 +220,23 @@ jobs:
         env:
           FD_SIZE: ${{ steps.fd.outputs.size }}
 
+      - name: 把 FD 推到 fd 分支（无需认证即可下载）
+        # 制品下载接口需要认证；推到 fd 分支后
+        # https://raw.githubusercontent.com/<owner>/<repo>/fd/SILICIUM_UEFI.fd 可直接下载。
+        run: |
+          work=$(mktemp -d)
+          cp uefi-cmi/Build/cmiPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd "$work/SILICIUM_UEFI.fd"
+          sha256sum "$work/SILICIUM_UEFI.fd" | tee "$work/SILICIUM_UEFI.fd.sha256"
+          cd "$work"
+          git init -q .
+          git checkout -q -b fd
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git add -A
+          git -c user.name="ci fd" -c user.email="ci@localhost" commit -q -m "fd ${GITHUB_SHA:0:7} run ${GITHUB_RUN_ID}"
+          git push -q --force origin fd
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: cmi-uefi-fd

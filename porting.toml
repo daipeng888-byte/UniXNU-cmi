@@ -40,6 +40,7 @@ findings = [
   "The firmware job runs fetch, tree and firmware as separate steps so a failure is attributable to source fetching, tree assembly or the EDK2 build without reading step logs.",
   "Actions logs cannot be downloaded without authentication even on a public repository (403), but check-run annotations can be read anonymously; the firmware job therefore emits the tail of its build logs with ::error:: so tools/gh_annotations.py can read the real failure without a token.",
   "Annotations carry only about ten lines, so the firmware job also force-pushes a complete log to the ci-logs branch on failure; raw.githubusercontent.com/<owner>/<repo>/ci-logs/firmware.log then serves the full build transcript without credentials, which is why the workflow needs contents: write.",
+  "The same trick publishes a successful build: the FD and its sha256 are force-pushed to the fd branch, because the artifact download endpoint needs authentication even for a public repository.",
 ]
 completion = ["All source pins resolve; every selected component belongs to an area; status shows intended overrides and patch order."]
 limits = [
@@ -52,7 +53,7 @@ evidence = []
 
 [[area]]
 id = "firmware"
-status = "planned"
+status = "host-verified"
 components = ["DarwinBoot"]
 paths = ["dts/**", "proprietary-files.txt", "package/**"]
 inputs = [
@@ -72,15 +73,22 @@ findings = [
   "package.edk2_dir() raises \"no edk2 tree: pass --edk2 DIR (a Mu_Basecore checkout)\" when neither --edk2/UNIXNU_EDK2 nor a fetched refer edk2 module is present, and it then requires MdePkg/MdePkg.dec; Mu_Basecore is a submodule of uefi-umi, so a recursive checkout provides it.",
   "The DSC chain needs PACKAGES_PATH entries that resolve KonaPkg and QcomPkg (Silicon/Qualcomm), umiPkg INFs and the FLASH_DEFINITION cmiPkg/cmi.fdf (Platforms/Xiaomi) and Silicium packages (Silicon/Silicium); board.toml [firmware] packages lists those roots.",
   "The FD is written to <uefi>/Build/cmiPkg/<target>_CLANGPDB/FV/, not to the UniXNU output tree, because the DSC sets OUTPUT_DIRECTORY = Build/cmiPkg; a workflow that searches only out/ cannot find it.",
+  "The first successful firmware build needed three fixes together: the PACKAGES_PATH roots, --edk2 pointing at the Mu_Basecore submodule, and a cmiPkg Include tree (APRIORI.inc, DXE.inc, RAW.inc plus the UmiSpmiLib and UmiRpmhLib headers) that cmi.fdf and cmi.dec reference but the package did not have.",
 ]
 completion = ["Firmware image builds, enters UniXNU, publishes the framebuffer and preserves the documented memory reservations."]
 limits = [
-  "No firmware build has run: clang, lld and make are absent on this host, and the workflow has never been triggered (the uefi fork reports zero workflow runs).",
-  "Every statement above comes from reading scripts/unixnu/firmware.py, package.py and cli.py at UniXNU main, not from a build log.",
-  "cmiPkg has no panel init and no backlight control yet; it reuses umiPkg panel-less GOP handoff, so the panel is whatever the stock bootloader leaves initialized.",
+  "Nothing has been booted: the FD exists, but no fastboot boot has run, so the menu, display and memory handoff are unverified.",
+  "cmiPkg has no panel init and no backlight control yet; it reuses umiPkg panel-less GOP handoff, so the panel stays whatever the stock bootloader initialized.",
+  "The build needs uefi-umi at 030effd or newer: earlier revisions have no cmiPkg/Include tree, so the !include lines of cmi.fdf fail.",
 ]
-next_action = ["Dispatch the firmware workflow and read its first failure, then add cmi panel init and backlight to cmiPkg."]
-evidence = []
+next_action = ["Download SILICIUM_UEFI.fd from the fd branch, back up the boot partition, then use fastboot boot (not flash) for the first boot attempt."]
+
+[[area.evidence]]
+kind = "host"
+reference = "https://github.com/wangjiaxue001/UniXNU-cmi/actions/runs/42015025767"
+command = "./unixnu firmware -D ../UniXNU-cmi --uefi ../uefi-cmi --edk2 ../uefi-cmi/Mu_Basecore"
+revision = "c245f21cbf3e135e0d6d629b09159116101e5232"
+result = "The firmware step completed in 58 s and wrote uefi-cmi/Build/cmiPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd; the follow-up size check passed against uefi_fd.size 0x00300000, and the uploaded cmi-uefi-fd artifact is 412840 bytes compressed. Nothing was booted."
 
 [[area]]
 id = "cpu"
