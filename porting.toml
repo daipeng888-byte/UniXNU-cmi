@@ -41,6 +41,7 @@ findings = [
   "Actions logs cannot be downloaded without authentication even on a public repository (403), but check-run annotations can be read anonymously; the firmware job therefore emits the tail of its build logs with ::error:: so tools/gh_annotations.py can read the real failure without a token.",
   "Annotations carry only about ten lines, so the firmware job also force-pushes a complete log to the ci-logs branch on failure; raw.githubusercontent.com/<owner>/<repo>/ci-logs/firmware.log then serves the full build transcript without credentials, which is why the workflow needs contents: write.",
   "The same trick publishes a successful build: the FD and its sha256 are force-pushed to the fd branch, because the artifact download endpoint needs authentication even for a public repository.",
+  "fastboot boot needs an Android boot image, not the raw firmware volume: scripts/unixnu/bootimg.py compiles BootShim/BootShim.S, appends the FD, gzips the pair, appends the patched device tree and calls Resources/Scripts/mkbootimg.py with the parameters of Resources/Configs/cmi.toml [boot_image]. Handing a bare FD to fastboot leaves the phone on a black screen in fastboot mode without writing anything.",
 ]
 completion = ["All source pins resolve; every selected component belongs to an area; status shows intended overrides and patch order."]
 limits = [
