@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: wangjiaxue001/uefi-umi
-          ref: a118944
+          ref: a118944fc65bb54501c2ae0bed8e8dffa3e52fcf
           path: uefi-cmi
           submodules: recursive
       - name: tools
