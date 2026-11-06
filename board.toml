@@ -27,12 +27,18 @@ include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
 [kernel]
 defconfig = "cmi_defconfig"
 # 归档配方：链接内核前按顺序执行（docs/zh/reference/configuration.md）。
-# 数组替换继承值：一旦显式写出，就必须列全所有需要的 component 条目，否则构建报
-# "unixnu: [kernel] archives needs component entries for: ..."（2026-11-06 CI 实测，
-# 只写 ShengUfs 时点名了 ArmCpu、ArmDTPlatform、SoftwareAES）。
+# 数组替换继承值：一旦显式写出，就必须复现"自动推导"的那份完整列表，否则会缺归档。
+# 2026-11-06 CI 实测，两次都只因列表不全而失败：
+#   只写 component:ShengUfs ->
+#     "unixnu: [kernel] archives needs component entries for: ArmCpu, ArmDTPlatform, SoftwareAES"
+#   补齐 component 后 ->
+#     "build-xnu-4k-baseline.sh: line 781: test -f \"$CRYPTO_ARCHIVE\" failed"
+# 所以 corecrypto（含 --namespace，产出 libcorecrypto_kernel_noasm-namespaced.a）
+# 与 libpthread 也必须列：build-xnu-4k-baseline.sh 在
+# XNU_SOURCE_CORECRYPTO14=1 / XNU_SOURCE_PTHREAD=1 且非 bootstrap 时会 test -f 这两个归档。
 # build-cmi-ufs.py 必须排在 component:ShengUfs 之前——它就地改写 fetch 下来的
 # tree/drivers/ShengUfs（SM8250 的 GCC 分支偏移与 compatible），随后组件归档才编译。
-archives = ["component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES", "build-cmi-ufs.py", "component:ShengUfs"]
+archives = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace", "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES", "build-cmi-ufs.py", "component:ShengUfs", "build-libpthread-kernel.py"]
 
 
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
