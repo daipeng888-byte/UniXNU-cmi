@@ -317,6 +317,7 @@ configuration = [
 ]
 procedure = ["dtc compiles the board DTS; check_adt.py validates the generator preconditions."]
 findings = [
+  "patches/xnu/ is claimed by both this area and firmware, and porting-record demands a findings update from every owner in the same commit: two consecutive rejections named firmware first, then packaging, for the same patch change. Touch both areas whenever a patch is added or edited.",
   "The board no longer carries an XNU patch of its own except for a temporary diagnostic: the klog variant of zzz-boot-progress.patch was deleted together with the implementation it needed, so patches/xnu/series lists the two XnuPrelink patches plus cmi-arm-init-marker.patch.",
   "cmi-arm-init-marker.patch panics right after PE_init_platform() in arm_init.c, the earliest usable C point. It answers two questions the green bar cannot: did the kernel execute C code at all, and does [payload] panic_screen actually paint. It is temporary and must be removed once both are known.",
   "The probe exists because there is no cheaper channel: cmi has no exposed UART, and the kernel has no framebuffer at all, so boot_progress_bind() from video_console never fires. Both official display paths need a device-side build script that is absent from the UniXNU tree at 18155b4e: CONFIG_XNU_NATIVE_LEGACY_DISPLAY requires build/native-legacy-display/libNativeLegacyDisplay.late.a from build-gop-legacy-display.py, and build-boot-progress.py is missing too; only sheng's device repository carries them.",
