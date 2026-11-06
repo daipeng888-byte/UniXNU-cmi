@@ -40,6 +40,9 @@ include_dirs = ["soc:dts"]
 config = "cmi"
 dsc = "Platforms/Xiaomi/cmiPkg/cmi.dsc"
 fd = "Build/cmiPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
+# [bootimg] dtb 指向的 build/cmi/cmi.dtb 由这个 preflight 脚本用 dtc 生成
+# （打包流程里没有别的东西会产出它；2026-11-06 CI 实测：pack 步骤报 device tree not found）。
+preflight = ["scripts/build-cmi-dtb.py"]
 # PACKAGES_PATH 必须能解析 DSC 链里引用的每个 package：
 #   cmi.dsc 的 !include KonaPkg/KonaPkg.dsc.inc         -> {uefi}/Silicon/Qualcomm
 #   KonaPkg.dsc.inc 的 !include QcomPkg/QcomPkg.dsc.inc -> {uefi}/Silicon/Qualcomm
