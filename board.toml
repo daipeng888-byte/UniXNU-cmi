@@ -23,6 +23,11 @@ include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
 [kernel]
 defconfig = "cmi_defconfig"
 
+# 板级给内核塞代码的正规通道：脚本读内核自己的 startup.o.json 编译参数，
+# 编译 kits/cmi/CmiKlog.c 并打包成 build/boot-progress/libBootProgress.a，
+# 供 XNU_BOOT_PROGRESS 链接（内核每亮一块 = 走过一个启动阶段）。
+archives = ["build-cmi-klog.py"]
+
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 # 不引用 os:patches/xnu/series：该系列的第一项是 zzz-boot-progress.patch，它的
 # bsd/kern/bsd_init.c 补丁块以 XNU_SHENG_PMGR（sheng 的 PMGR 电源管理补丁）为前提；

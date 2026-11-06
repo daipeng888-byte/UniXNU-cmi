@@ -7,3 +7,9 @@
 # prefix 写法与 profiles/os/*/patches/xnu/series 一致。
 component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch
 component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
+# cmi bring-up klog: the kernel paints one block per stage into the framebuffer
+# the bootloader still scans out, so "how far did it get" is visible with no
+# panel driver, no font and no console. The upstream zzz-boot-progress.patch
+# also patches bsd_init.c around sheng's XNU_SHENG_PMGR code; that hunk is
+# removed here because cmi has no sheng PMGR patch (2026-11-06).
+cmi-boot-progress.patch
