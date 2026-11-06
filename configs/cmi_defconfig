@@ -34,9 +34,11 @@ CONFIG_XNU_DT_PANIC_REGION=y
 # CONFIG_XNU_NATIVE_LEGACY_DISPLAY is not set
 # CONFIG_XNU_NATIVE_MOBILE_DISPLAY is not set
 
-# mockfs 是 QEMU 冒烟测试用的 fixture（需要板级 [kernel] archives 里列
-# build-mockfs-fixture.py 才会生成 libmockfs_fixture.a）。OS profile 的 ipados.config
-# 打开了 CONFIG_XNU_SOURCE_MOCKFS=y，cmi 不带这个 fixture，链接会缺
-# _mockfs_mountroot/_mockfs_vfsops/_mockfs_vnodeop_opv_desc，所以在这里关掉。
-# （2026-11-06 CI 实测：XNU 编译到最后链接一步才报这些未定义符号。）
+# mockfs is the QEMU smoke-test fixture: it needs build-mockfs-fixture.py
+# listed in [kernel] archives to produce libmockfs_fixture.a. The OS profile
+# (profiles/os/ipados-17.7.11-21H461/configs/ipados.config) enables
+# CONFIG_XNU_SOURCE_MOCKFS=y, so vfs_conf.c references mockfs while nothing
+# provides it and the XNU link fails on _mockfs_mountroot/_mockfs_vfsops/
+# _mockfs_vnodeop_opv_desc. The defconfig is the last layer applied, so turn
+# it off here. Measured on CI, 2026-11-06.
 CONFIG_XNU_SOURCE_MOCKFS=n
