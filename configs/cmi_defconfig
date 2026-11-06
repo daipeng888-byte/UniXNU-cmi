@@ -42,7 +42,3 @@ CONFIG_XNU_DT_PANIC_REGION=y
 # _mockfs_vnodeop_opv_desc. The defconfig is the last layer applied, so turn
 # it off here. Measured on CI, 2026-11-06.
 CONFIG_XNU_SOURCE_MOCKFS=n
-
-# cmi bring-up klog: paint one block per kernel stage into the inherited
-# framebuffer (see kits/cmi/CmiKlog.c and [kernel] archives).
-CONFIG_XNU_BOOT_PROGRESS=y
