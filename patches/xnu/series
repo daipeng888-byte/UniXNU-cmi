@@ -7,3 +7,7 @@
 # prefix 写法与 profiles/os/*/patches/xnu/series 一致。
 component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch
 component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
+# 临时诊断探针（2026-11-06）：在 arm_init 里最早能用的 C 代码处 panic 一次，
+# 用来判断两件事——内核是否真的执行到了 C 代码，以及 panic_screen 能否画出东西。
+# 拿到结论后删除本行与同名 .patch。
+cmi-arm-init-marker.patch
