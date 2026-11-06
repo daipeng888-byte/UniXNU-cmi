@@ -82,7 +82,10 @@ BUILDID_STRING = "cmi-menu-research"
 
 [payload]
 volume = "CMIXNU"
-size_mib = 192
+# 64 MiB: kernel.macho 实测 51,892,224 B（2026-11-06 package 产物），加上 toml/trustcache
+# 仍远小于 64 MiB；而 cmi 的 boot 分区只有 128 MiB，192 MiB 的负载会让 boot.img 刷不进去
+# （原厂 boot.img 就是 128 MiB 整分区镜像）。
+size_mib = 64
 loader = "firmware"
 title = "Mi 10 Pro"
 kernel_args = ["-v", "serial=3"]
