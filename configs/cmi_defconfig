@@ -33,3 +33,10 @@ CONFIG_XNU_DT_PANIC_REGION=y
 # æ˜¾ç¤ºï¼šèµ°å›ºä»¶ GOP framebufferï¼Œä¸éœ€è¦åŽŸç”Ÿæ˜¾ç¤ºé©±åŠ¨
 # CONFIG_XNU_NATIVE_LEGACY_DISPLAY is not set
 # CONFIG_XNU_NATIVE_MOBILE_DISPLAY is not set
+
+# mockfs ÊÇ QEMU Ã°ÑÌ²âÊÔÓÃµÄ fixture£¨ÐèÒª°å¼¶ [kernel] archives ÀïÁÐ
+# build-mockfs-fixture.py ²Å»áÉú³É libmockfs_fixture.a£©¡£OS profile µÄ ipados.config
+# ´ò¿ªÁË CONFIG_XNU_SOURCE_MOCKFS=y£¬cmi ²»´øÕâ¸ö fixture£¬Á´½Ó»áÈ±
+# _mockfs_mountroot/_mockfs_vfsops/_mockfs_vnodeop_opv_desc£¬ËùÒÔÔÚÕâÀï¹Øµô¡£
+# £¨2026-11-06 CI Êµ²â£ºXNU ±àÒëµ½×îºóÁ´½ÓÒ»²½²Å±¨ÕâÐ©Î´¶¨Òå·ûºÅ¡££©
+CONFIG_XNU_SOURCE_MOCKFS=n
