@@ -170,6 +170,7 @@ configuration = [
 ]
 procedure = ["GPT was read by dumping 8 sectors of /dev/block/sda and parsing the header on the host, because TWRP ships no sgdisk, parted or fdisk."]
 findings = [
+  "scripts/build-cmi-ufs.py prepares the storage path without enabling it: it rewrites the fetched ShengUfs copy for SM8250 (GCC_UFS_PHY_AXI_ENABLE 0x77010, GCC_UFS_PHY_AHB_ENABLE 0x77018, compatible qcom,sm8250-ufshc; GDSCR 0x77004 is unchanged) and stays out of [kernel] archives until the kernel itself is confirmed.",
   "ShengUfs personality uses IONameMatch qcom,sm8550-ufshc while cmi reports qcom,ufshc, so the driver will not bind without a component-side change.",
   "ShengUfs is SM8550-specific (controller access, SMMU takeover, GccUfs clock states); SM8250 constants have not been compared.",
 ]
