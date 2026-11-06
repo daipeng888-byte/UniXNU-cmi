@@ -156,7 +156,7 @@ evidence = []
 [[area]]
 id = "storage"
 status = "planned"
-components = []
+components = ["ShengUfs"]
 paths = ["drivers/ShengUfs", "scripts/*ufs*", "scripts/*storage*", "scripts/*userdata*"]
 inputs = [
   "UFS host: compatible qcom,ufshc, reg 0x1d84000+0x3000 and 0x1d90000+0x8000 (ICE), interrupt SPI 0x109 level-high, lanes-per-direction 2.",
@@ -165,18 +165,19 @@ inputs = [
 ]
 configuration = [
   "dts/sm8250.dtsi defines ufs (label ufs, unixnu,adt-name ufshc, interrupt-parent <&intc>) and ufsphy (0x1d87000, qcom,ufs-phy-qmp-v4); both default to disabled.",
-  "dts/cmi.dts enables them with &ufs { status = \"okay\"; } and &ufsphy { status = \"okay\"; }, the pattern used by UniXNU-sheng.",
-  "board.toml [userdata] carries the measured geometry; [payload.adt] root_match_volume_uuid stays unset until a volume is chosen.",
+  "dts/cmi.dts enables them with status = \"okay\" and adds \"qcom,sm8250-ufshc\" to the &ufs compatible list after the stock \"qcom,ufshc\"; the extra value exists only so the ShengUfs personality (rewritten by scripts/build-cmi-ufs.py) can bind.",
+  "board.toml selects ShengUfs in [components] include, lists archives = [\"build-cmi-ufs.py\", \"component:ShengUfs\"] so the rewrite runs before the component archive builds, adds native-ufs-root=1 to kernel_args, carries [userdata] geometry and the umi cpu_regs; [payload.adt] root_match_volume_uuid stays unset until a volume is chosen.",
 ]
 procedure = ["GPT was read by dumping 8 sectors of /dev/block/sda and parsing the header on the host, because TWRP ships no sgdisk, parted or fdisk."]
 findings = [
-  "scripts/build-cmi-ufs.py prepares the storage path without enabling it: it rewrites the fetched ShengUfs copy for SM8250 (GCC_UFS_PHY_AXI_ENABLE 0x77010, GCC_UFS_PHY_AHB_ENABLE 0x77018, compatible qcom,sm8250-ufshc; GDSCR 0x77004 is unchanged) and stays out of [kernel] archives until the kernel itself is confirmed.",
-  "ShengUfs personality uses IONameMatch qcom,sm8550-ufshc while cmi reports qcom,ufshc, so the driver will not bind without a component-side change.",
-  "ShengUfs is SM8550-specific (controller access, SMMU takeover, GccUfs clock states); SM8250 constants have not been compared.",
+  "scripts/build-cmi-ufs.py is now listed first in [kernel] archives, so it rewrites the fetched ShengUfs copy before component:ShengUfs compiles: GCC_UFS_PHY_AXI_ENABLE 0x77018 -> 0x77010, GCC_UFS_PHY_AHB_ENABLE 0x77024 -> 0x77018, compatible qcom,sm8550-ufshc -> qcom,sm8250-ufshc; GDSCR 0x77004 is unchanged. Checked on the host against the real GccUfs.h and NativeUfs.cpp: two offsets rewritten, both personality strings replaced, and a second run reports already patched.",
+  "ShengUfs still ships IONameMatch qcom,sm8550-ufshc; the component-side change is the qcom,sm8250-ufshc rewrite above, not a local fork.",
+  "SM8250 constants come from reAAAq/UniXNU-umi (same GCC block base and GDSCR; AXI 0x77010, AHB 0x77018). The controller base 0x1d84000/0x3000 is identical, but SM8250 UFS 3.x versus SM8550 UFS 4.x behaviour is unverified on hardware.",
+  "Nothing has been built or booted with ShengUfs: the archive, the CONFIG_XNU_NATIVE_UFS=y force-load and the personality binding are all unproven until the package workflow runs.",
 ]
 completion = ["Host: register, clock, link and SMMU facts match the board inventory. Reads: capacity, GPT and known blocks correct. Root: volume mounts and launchd starts."]
-limits = ["No PHY, clock, reset, regulator or SMMU inventory; no component build.", "Candidate ShengUfs is not selected: it targets SM8550 and its personality does not match qcom,ufshc."]
-next_action = ["Inventory SM8250 UFS PHY, GCC clock IDs, reset and SMMU stream, then compare against ShengUfs constants."]
+limits = ["No PHY, clock, reset, regulator or SMMU inventory; no component build.", "ShengUfs is selected but has never been compiled or run on cmi: the SM8250 branch-enable offsets come from umi, not from this board.", "Root mount is untested because [payload.adt] root_match_volume_uuid and [userdata] windows are still unset.", "Enabling it now is ahead of the handover order (which wanted kernel output first); the flashable image is still the known-good one and nothing was written to the handset."]
+next_action = ["Run the package workflow and confirm libShengUfs.a is built and force-loaded, then restore kernel output before flashing this build."]
 evidence = []
 
 [[area]]
@@ -307,8 +308,8 @@ inputs = [
   "kernel.prelink pins kernelcache sha256 f18b4df8... and early_security_init com.apple.driver.AppleMobileFileIntegrity=0xfffffff005ab4ae0.",
 ]
 configuration = [
-  "[payload] volume CMIXNU, size 192 MiB, loader firmware, kernel_args -v serial=3.",
-  "[kernel] archives is not set yet; when set it must list every kernel stage recipe in order.",
+  "[payload] volume CMIXNU, size 64 MiB, loader firmware, kernel_args -v serial=3.",
+  "[kernel] archives now lists build-cmi-ufs.py then component:ShengUfs; every kernel stage recipe must stay in order.",
 ]
 procedure = ["dtc compiles the board DTS; check_adt.py validates the generator preconditions."]
 findings = [

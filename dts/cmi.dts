@@ -147,6 +147,13 @@
 /* SoC dtsi 里默认 disabled，由板级启用（与 UniXNU-sheng 的写法一致）。 */
 &ufs {
 	status = "okay";
+	/*
+	 * ShengUfs 的 personality 写死 "qcom,sm8550-ufshc"，而 SoC dtsi 里本节点是
+	 * "qcom,ufshc"。scripts/build-cmi-ufs.py 在编译前把组件源码的匹配串改成
+	 * "qcom,sm8250-ufshc"（umi 的做法，见 HANDOVER §7.6/§7.8），所以板级
+	 * compatible 要同时给出这个值，驱动才能匹配到本节点。原厂值保留在前。
+	 */
+	compatible = "qcom,ufshc", "qcom,sm8250-ufshc";
 };
 
 &ufsphy {

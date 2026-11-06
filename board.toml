@@ -18,10 +18,17 @@ kit = "cmi"
 
 [components]
 # 模板默认值；需按组件目录逐项核对 SM8250 / cmi 硬件范围后增删。
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+# ShengUfs（运行时类 NativeUfs）是 UFS 存储组件；它声明依赖 VirtioMmioBlock 与
+# VerifiedRoot，按 docs/zh/reference/configuration.md 由构建按依赖顺序解析。
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "ShengUfs"]
 
 [kernel]
 defconfig = "cmi_defconfig"
+# 归档配方：链接内核前按顺序执行（docs/zh/reference/configuration.md）。
+# build-cmi-ufs.py 必须排在 component:ShengUfs 之前——它就地改写 fetch 下来的
+# tree/drivers/ShengUfs（SM8250 的 GCC 分支偏移与 compatible），随后组件归档才编译。
+# 数组替换继承值，所以这里列出全部需要构建的归档。
+archives = ["build-cmi-ufs.py", "component:ShengUfs"]
 
 
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
@@ -81,6 +88,14 @@ SHIP_MODE = "FALSE"
 DEVICE_MODEL = "0"
 BUILDID_STRING = "cmi-menu-research"
 
+[userdata]
+# cmi userdata GPT 条目，实测（HANDOVER §4）：226.18 GiB。
+# 装 iOS 会整块重写这一区间；用户 2026-11-06 已明确同意清空。
+# windows 与 [payload.adt] root_match_volume_uuid 留到装完系统、选定 APFS 卷后再填。
+first_lba = 0x2C0000
+last_lba = 0x3B4B7FA
+lba_bytes = 4096
+
 [payload]
 volume = "CMIXNU"
 # 64 MiB: kernel.macho 实测 51,892,224 B（2026-11-06 package 产物），加上 toml/trustcache
@@ -90,7 +105,7 @@ size_mib = 64
 loader = "firmware"
 title = "Mi 10 Pro"
 # keepsyms/kt_fixed_zones 与 umi（同 SM8250）实测配置一致：panic 时保留符号，固定 zone 数。
-kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120"]
+kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120", "native-ufs-root=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true
@@ -110,3 +125,5 @@ unixnu = "../UniXNU"
 # 实测 qcom,msm-id = 0x164，故写作 "164"（模板示例 "207" 即 0x207）。
 chip_id = "164"
 unique_chip_id = "required"
+# SM8250 的 8 个 CPU MPIDR 亲和值（umi 同 SoC 实测值，见 HANDOVER §7.8）。
+cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
