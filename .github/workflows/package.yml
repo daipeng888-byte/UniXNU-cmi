@@ -5,9 +5,9 @@ name: package
 # repository secret UNIXNU_UNIQUE_CHIP_ID and is baked into the images, so the run's
 # artifacts belong to one device alone: download them, then delete the run.
 #
-# Adapted from UniXNU-sheng's package.yml. NOT YET RUN: cmi has no cmiPkg and no pinned
-# UniXNU revision, so every `ref:` below is a placeholder that must be replaced by a
-# reviewed commit before this workflow can produce anything.
+# Adapted from UniXNU-sheng's package.yml. Pinned to reviewed commits; the run
+# still needs the repository secret UNIXNU_UNIQUE_CHIP_ID (the device platform
+# seed, 8-16 hex digits) before scripts/package.sh can produce images.
 
 on:
   workflow_dispatch:
@@ -37,13 +37,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: UniXNU/UniXNU
-          ref: REQUIRED_UNIXNU_COMMIT
+          ref: 18155b4e441b68d54f841f08b7633f90822eb596
           path: UniXNU
           submodules: recursive
       - uses: actions/checkout@v4
         with:
-          repository: REQUIRED_OWNER/uefi-cmi
-          ref: REQUIRED_UEFI_COMMIT
+          repository: wangjiaxue001/uefi-umi
+          ref: a118944
           path: uefi-cmi
           submodules: recursive
       - name: tools
