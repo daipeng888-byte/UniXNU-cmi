@@ -26,15 +26,9 @@ defconfig = "cmi_defconfig"
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 # 不引用 os:patches/xnu/series：该系列的第一项是 zzz-boot-progress.patch，它的
 # bsd/kern/bsd_init.c 补丁块以 XNU_SHENG_PMGR（sheng 的 PMGR 电源管理补丁）为前提；
-# cmi 没有那套补丁，上下文不存在，git apply 直接失败。cmi 只需要该系列剩下的两个
-# XnuPrelink 补丁，因此逐项列出（2026-11-06 CI 实测结论）。
-patch_series = [
-  "arch:patches/xnu/series",
-  "soc:patches/xnu/series",
-  "component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch",
-  "component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch",
-  "device:patches/xnu/series",
-]
+# cmi 没有那套补丁，上下文不存在，git apply 直接失败（2026-11-06 CI 实测）。
+# cmi 需要的那两个 XnuPrelink 补丁写在 device:patches/xnu/series 里。
+patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "device:patches/xnu/series"]
 
 [device_tree]
 source = "device:dts/cmi.dts"
