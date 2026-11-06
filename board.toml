@@ -27,10 +27,12 @@ include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
 [kernel]
 defconfig = "cmi_defconfig"
 # 归档配方：链接内核前按顺序执行（docs/zh/reference/configuration.md）。
+# 数组替换继承值：一旦显式写出，就必须列全所有需要的 component 条目，否则构建报
+# "unixnu: [kernel] archives needs component entries for: ..."（2026-11-06 CI 实测，
+# 只写 ShengUfs 时点名了 ArmCpu、ArmDTPlatform、SoftwareAES）。
 # build-cmi-ufs.py 必须排在 component:ShengUfs 之前——它就地改写 fetch 下来的
 # tree/drivers/ShengUfs（SM8250 的 GCC 分支偏移与 compatible），随后组件归档才编译。
-# 数组替换继承值，所以这里列出全部需要构建的归档。
-archives = ["build-cmi-ufs.py", "component:ShengUfs"]
+archives = ["component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES", "build-cmi-ufs.py", "component:ShengUfs"]
 
 
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
