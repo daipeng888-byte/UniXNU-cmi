@@ -24,11 +24,10 @@ CONFIG_XNU_NATIVE_PAN=y
 # BCM2837 构建目标要求该开关；未设为 n 会回退到它固定的 panic 物理地址
 CONFIG_XNU_DT_PANIC_REGION=y
 
-# 存储：ShengUfs（运行时类 NativeUfs）已选中。scripts/build-cmi-ufs.py 在编译前
-# 把组件源码的匹配串改成 qcom,sm8250-ufshc，板级 dts/cmi.dts 的 &ufs 同时给出
-# 该 compatible，驱动才能匹配到本节点。开启后 build-xnu-4k-baseline.sh 会
-# -force_load build/sheng-ufs/libShengUfs.a（见该脚本的 XNU_NATIVE_UFS 分支）。
-CONFIG_XNU_NATIVE_UFS=y
+# 存储：ShengUfs 暂不选中。该版本编译 NativeUfs 时强制 -DNATIVE_VERIFIED_BLOCK=1，
+# 链接需要 VerifiedRoot kit、根策略包、libBootProgress 与 IOStorageFamily，单开 UFS
+# 会在链接阶段失败（2026-11-06 CI 实测）。等 boot-progress 与根卷栈就绪后再启用。
+# CONFIG_XNU_NATIVE_UFS is not set
 
 # GPU：SM8250 是 Adreno 650，组件目录只有 A740 实现
 # CONFIG_XNU_NATIVE_ADRENO is not set

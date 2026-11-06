@@ -18,27 +18,17 @@ kit = "cmi"
 
 [components]
 # 模板默认值；需按组件目录逐项核对 SM8250 / cmi 硬件范围后增删。
-# ShengUfs（运行时类 NativeUfs）是 UFS 存储组件，声明依赖 VirtioMmioBlock
-# 与 VerifiedRoot。porting-record 会展开依赖闭包，要求闭包里每个组件都被某个
-# 记录区认领（scripts/porting-record.py check 报 "components without an area"），
-# 所以三者都写进完整列表；写法与参考板 UniXNU-sheng 一致。
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "ShengUfs", "VirtioMmioBlock", "VerifiedRoot"]
+# ShengUfs 暂不选中：该版本编译 NativeUfs 时强制 -DNATIVE_VERIFIED_BLOCK=1，链接
+# 需要 VerifiedRoot kit、根策略包、libBootProgress（boot-progress 尚未移植）与
+# IOStorageFamily，单开 UFS 在链接阶段必然失败。详见 porting.toml 的 storage 区。
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
 
 [kernel]
 defconfig = "cmi_defconfig"
-# 归档配方：链接内核前按顺序执行（docs/zh/reference/configuration.md）。
-# 数组替换继承值：一旦显式写出，就必须复现"自动推导"的那份完整列表，否则会缺归档。
-# 2026-11-06 CI 实测，两次都只因列表不全而失败：
-#   只写 component:ShengUfs ->
-#     "unixnu: [kernel] archives needs component entries for: ArmCpu, ArmDTPlatform, SoftwareAES"
-#   补齐 component 后 ->
-#     "build-xnu-4k-baseline.sh: line 781: test -f \"$CRYPTO_ARCHIVE\" failed"
-# 所以 corecrypto（含 --namespace，产出 libcorecrypto_kernel_noasm-namespaced.a）
-# 与 libpthread 也必须列：build-xnu-4k-baseline.sh 在
-# XNU_SOURCE_CORECRYPTO14=1 / XNU_SOURCE_PTHREAD=1 且非 bootstrap 时会 test -f 这两个归档。
-# build-cmi-ufs.py 必须排在 component:ShengUfs 之前——它就地改写 fetch 下来的
-# tree/drivers/ShengUfs（SM8250 的 GCC 分支偏移与 compatible），随后组件归档才编译。
-archives = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace", "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES", "build-cmi-ufs.py", "component:ShengUfs", "build-libpthread-kernel.py"]
+# [kernel] archives 暂不设置，由构建自动推导。显式写出会替换掉那份推导结果：2026-11-06
+# 实测两次，先报 "needs component entries for: ArmCpu, ArmDTPlatform, SoftwareAES"，
+# 补齐后又报 test -f "$CRYPTO_ARCHIVE" failed（corecrypto 与 libpthread 也要列全）。
+# 重新启用 UFS 时按 porting.toml storage 区的清单一次性写全。
 
 
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
@@ -115,7 +105,7 @@ size_mib = 64
 loader = "firmware"
 title = "Mi 10 Pro"
 # keepsyms/kt_fixed_zones 与 umi（同 SM8250）实测配置一致：panic 时保留符号，固定 zone 数。
-kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120", "native-ufs-root=1"]
+kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true

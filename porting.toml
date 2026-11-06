@@ -50,7 +50,7 @@ findings = [
   "The local patches/xnu/cmi-boot-progress.patch is gone with the klog experiment: the series keeps only the two XnuPrelink patches plus the arch series, so the kernel build no longer applies any board-owned XNU diff.",
   "The OS patch series cannot be reused whole: profiles/os/ipados-17.7.11-21H461/patches/xnu/series starts with zzz-boot-progress.patch, whose bsd/kern/bsd_init.c hunk needs sheng's XNU_SHENG_PMGR block. cmi keeps a local copy without that hunk and lists the two XnuPrelink patches directly in patches/xnu/series.",
   "fastboot boot needs an Android boot image, not the raw firmware volume: scripts/unixnu/bootimg.py compiles BootShim/BootShim.S, appends the FD, gzips the pair, appends the patched device tree and calls Resources/Scripts/mkbootimg.py with the parameters of Resources/Configs/cmi.toml [boot_image]. Handing a bare FD to fastboot leaves the phone on a black screen in fastboot mode without writing anything.",
-  "board.toml now selects ShengUfs together with its declared dependencies VirtioMmioBlock and VerifiedRoot, adds native-ufs-root=1 to kernel_args, and carries [userdata] geometry plus umi's cpu_regs. [kernel] archives became explicit and therefore had to reproduce the derived list; two build failures in a row proved it. With only \"component:ShengUfs\" the build stopped at \"unixnu: [kernel] archives needs component entries for: ArmCpu, ArmDTPlatform, SoftwareAES\"; after those three were added it stopped at \"build-xnu-4k-baseline.sh: line 781: test -f \\\"$CRYPTO_ARCHIVE\\\" failed\", because build-corecrypto-14.py (plus its --namespace pass, which produces libcorecrypto_kernel_noasm-namespaced.a) and build-libpthread-kernel.py belong in the same list whenever XNU_SOURCE_CORECRYPTO14 and XNU_SOURCE_PTHREAD are on. The final list keeps build-cmi-ufs.py immediately before component:ShengUfs. Two rules in scripts/porting-record.py bit here too: it expands the dependency closure of [components] include (\"components without an area: ['VerifiedRoot', 'VirtioMmioBlock']\"), and it requires the area that owns a changed file to update its findings or evidence in the same commit (\"board.toml: update configuration findings or evidence with this change\").",
+  "ShengUfs was selected on 2026-11-06 and reverted the same day: the kernel link failed on verified-root, boot-progress and IOBlockStorageDevice symbols, so board.toml is back to the five-component baseline with no [kernel] archives (letting the build derive it) and no native-ufs-root=1. What survives the revert is selection-independent: the [userdata] geometry and umi's cpu_regs stay, and dts/cmi.dts keeps the extra compatible. Four rules of the tooling were learned the hard way and are worth keeping: an explicit [kernel] archives list replaces the derived one and must reproduce it in full (\"unixnu: [kernel] archives needs component entries for: ArmCpu, ArmDTPlatform, SoftwareAES\", then test -f \"$CRYPTO_ARCHIVE\" failed, because build-corecrypto-14.py, its --namespace pass and build-libpthread-kernel.py are derived entries too); porting-record expands the dependency closure of [components] include (\"components without an area: ['VerifiedRoot', 'VirtioMmioBlock']\"); and the area that owns a changed file must update its findings or evidence in the same commit (\"board.toml: update configuration findings or evidence with this change\").",
 ]
 completion = ["All source pins resolve; every selected component belongs to an area; status shows intended overrides and patch order."]
 limits = [
@@ -157,7 +157,7 @@ evidence = []
 [[area]]
 id = "storage"
 status = "planned"
-components = ["ShengUfs", "VirtioMmioBlock", "VerifiedRoot"]
+components = []
 paths = ["drivers/ShengUfs", "scripts/*ufs*", "scripts/*storage*", "scripts/*userdata*"]
 inputs = [
   "UFS host: compatible qcom,ufshc, reg 0x1d84000+0x3000 and 0x1d90000+0x8000 (ICE), interrupt SPI 0x109 level-high, lanes-per-direction 2.",
@@ -167,19 +167,20 @@ inputs = [
 configuration = [
   "dts/sm8250.dtsi defines ufs (label ufs, unixnu,adt-name ufshc, interrupt-parent <&intc>) and ufsphy (0x1d87000, qcom,ufs-phy-qmp-v4); both default to disabled.",
   "dts/cmi.dts enables them with status = \"okay\" and adds \"qcom,sm8250-ufshc\" to the &ufs compatible list after the stock \"qcom,ufshc\"; the extra value exists only so the ShengUfs personality (rewritten by scripts/build-cmi-ufs.py) can bind.",
-  "board.toml selects ShengUfs in [components] include, lists [kernel] archives ending with build-cmi-ufs.py immediately before component:ShengUfs (the list also carries the ArmDTPlatform, ArmCpu, SoftwareAES, corecrypto and libpthread recipes the build requires once archives is explicit), adds native-ufs-root=1 to kernel_args, carries [userdata] geometry and the umi cpu_regs; [payload.adt] root_match_volume_uuid stays unset until a volume is chosen.",
+  "board.toml does not select ShengUfs yet. The selection, [kernel] archives and native-ufs-root=1 were tried on 2026-11-06 and reverted the same day after the kernel link failed; what stays in board.toml is only what is independent of the selection ([userdata] geometry and the umi cpu_regs), and dts/cmi.dts keeps the extra compatible for the day it returns.",
 ]
 procedure = ["GPT was read by dumping 8 sectors of /dev/block/sda and parsing the header on the host, because TWRP ships no sgdisk, parted or fdisk."]
 findings = [
-  "scripts/build-cmi-ufs.py is now listed first in [kernel] archives, so it rewrites the fetched ShengUfs copy before component:ShengUfs compiles: GCC_UFS_PHY_AXI_ENABLE 0x77018 -> 0x77010, GCC_UFS_PHY_AHB_ENABLE 0x77024 -> 0x77018, compatible qcom,sm8550-ufshc -> qcom,sm8250-ufshc; GDSCR 0x77004 is unchanged. Checked on the host against the real GccUfs.h and NativeUfs.cpp: two offsets rewritten, both personality strings replaced, and a second run reports already patched.",
+  "scripts/build-cmi-ufs.py rewrites the fetched ShengUfs copy for SM8250: GCC_UFS_PHY_AXI_ENABLE 0x77018 -> 0x77010, GCC_UFS_PHY_AHB_ENABLE 0x77024 -> 0x77018, compatible qcom,sm8550-ufshc -> qcom,sm8250-ufshc, GDSCR 0x77004 unchanged. Verified on the host against the real GccUfs.h and NativeUfs.cpp, and the CI log shows the recipe executing from <tree>/scripts/ during the kernel build.",
   "ShengUfs still ships IONameMatch qcom,sm8550-ufshc; the component-side change is the qcom,sm8250-ufshc rewrite above, not a local fork.",
   "SM8250 constants come from reAAAq/UniXNU-umi (same GCC block base and GDSCR; AXI 0x77010, AHB 0x77018). The controller base 0x1d84000/0x3000 is identical, but SM8250 UFS 3.x versus SM8550 UFS 4.x behaviour is unverified on hardware.",
-  "Nothing has been built or booted with ShengUfs: the archive, the CONFIG_XNU_NATIVE_UFS=y force-load and the personality binding are all unproven until the package workflow runs.",
-  "The first commit of this work failed porting-record with \"components without an area: ['VerifiedRoot', 'VirtioMmioBlock']\": the check expands the dependency closure of [components] include, so both ShengUfs dependencies must be claimed by an area. They now sit in this area and in the include list, the same shape UniXNU-sheng uses.",
+  "Selecting ShengUfs does not link on this revision. scripts/build-arm-driver.py compiles NativeUfs with -DNATIVE_VERIFIED_BLOCK=1 -DNATIVE_VERIFIED_BLOCK_MULTI_POLICY=1 unconditionally, so libShengUfs.a references verified_root_key, verified_root_policies, verified_root_policy_count, vr_open, vr_verify_block and vr_xnu_crypto; NativeUfsBlock also derives from IOBlockStorageDevice and calls boot_progress_poll. The 2026-11-06 link failed on exactly those symbols. Satisfying them needs the VerifiedRoot kit plus a generated root policy bundle, libBootProgress (build-boot-progress.py is absent from the UniXNU tree at 18155b4e, so umi's package/boot-progress has to be ported), and IOStorageFamily linked into the kernel.",
+  "The bookkeeping is settled for when that stack exists: an explicit [kernel] archives list replaces the derived one, so it must carry build-corecrypto-14.py, build-corecrypto-14.py --namespace, component:ArmDTPlatform, component:ArmCpu, component:SoftwareAES, build-cmi-ufs.py immediately before component:ShengUfs, and build-libpthread-kernel.py. Both failure modes were observed in CI (\"needs component entries for: ...\", then test -f \"$CRYPTO_ARCHIVE\" failed).",
+  "porting-record expands the dependency closure of [components] include, so a selected ShengUfs also requires VirtioMmioBlock and VerifiedRoot to be claimed by an area.",
 ]
 completion = ["Host: register, clock, link and SMMU facts match the board inventory. Reads: capacity, GPT and known blocks correct. Root: volume mounts and launchd starts."]
-limits = ["No PHY, clock, reset, regulator or SMMU inventory; no component build.", "ShengUfs is selected but has never been compiled or run on cmi: the SM8250 branch-enable offsets come from umi, not from this board.", "Root mount is untested because [payload.adt] root_match_volume_uuid and [userdata] windows are still unset.", "Enabling it now is ahead of the handover order (which wanted kernel output first); the flashable image is still the known-good one and nothing was written to the handset."]
-next_action = ["Run the package workflow and confirm libShengUfs.a is built and force-loaded, then restore kernel output before flashing this build."]
+limits = ["No PHY, clock, reset, regulator or SMMU inventory; no component build.", "ShengUfs is not selected: this revision compiles it with verified-root forced on, so it cannot link without the VerifiedRoot kit, a root policy bundle, boot-progress and IOStorageFamily.", "Root mount is untested because [payload.adt] root_match_volume_uuid and [userdata] windows are still unset.", "The SM8250 branch-enable offsets come from umi, not from this board, and have never run on cmi."]
+next_action = ["Port umi's package/boot-progress (the kernel-output prerequisite the handover ranks first) together with the VerifiedRoot kit and a root policy bundle, then re-select ShengUfs using the full archives list recorded here."]
 evidence = []
 
 [[area]]
@@ -311,7 +312,7 @@ inputs = [
 ]
 configuration = [
   "[payload] volume CMIXNU, size 64 MiB, loader firmware, kernel_args -v serial=3.",
-  "[kernel] archives now lists build-cmi-ufs.py then component:ShengUfs; every kernel stage recipe must stay in order.",
+  "[kernel] archives is unset, so the build derives the recipe list; whenever it is written explicitly it must reproduce that list in full.",
 ]
 procedure = ["dtc compiles the board DTS; check_adt.py validates the generator preconditions."]
 findings = [
