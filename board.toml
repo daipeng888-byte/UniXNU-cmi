@@ -18,9 +18,11 @@ kit = "cmi"
 
 [components]
 # 模板默认值；需按组件目录逐项核对 SM8250 / cmi 硬件范围后增删。
-# ShengUfs（运行时类 NativeUfs）是 UFS 存储组件；它声明依赖 VirtioMmioBlock 与
-# VerifiedRoot，按 docs/zh/reference/configuration.md 由构建按依赖顺序解析。
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "ShengUfs"]
+# ShengUfs（运行时类 NativeUfs）是 UFS 存储组件，声明依赖 VirtioMmioBlock
+# 与 VerifiedRoot。porting-record 会展开依赖闭包，要求闭包里每个组件都被某个
+# 记录区认领（scripts/porting-record.py check 报 "components without an area"），
+# 所以三者都写进完整列表；写法与参考板 UniXNU-sheng 一致。
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "ShengUfs", "VirtioMmioBlock", "VerifiedRoot"]
 
 [kernel]
 defconfig = "cmi_defconfig"
