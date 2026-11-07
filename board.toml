@@ -123,7 +123,7 @@ size_mib = 64
 loader = "firmware"
 title = "Mi 10 Pro"
 # keepsyms/kt_fixed_zones 与 umi（同 SM8250）实测配置一致：panic 时保留符号，固定 zone 数。
-kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120", "native-ufs-root=1"]
+kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120", "sheng-pmgr=2", "native-ufs-root=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true
