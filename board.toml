@@ -22,7 +22,7 @@ kit = "cmi"
 # 需要 VerifiedRoot kit、根策略包、libBootProgress（boot-progress 尚未移植）与
 # IOStorageFamily，单开 UFS 在链接阶段必然失败。详见 porting.toml 的 storage 区。
 include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
-           "ShengUfs", "VirtioMmioBlock", "RamBlock", "ShengPreflight", "AppleKeyStoreState"]
+           "ShengUfs", "VirtioMmioBlock", "RamBlock", "VerifiedRoot", "ShengPreflight", "AppleKeyStoreState"]
 
 [kernel]
 defconfig = "cmi_defconfig"
