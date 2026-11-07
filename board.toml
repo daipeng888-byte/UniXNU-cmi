@@ -22,17 +22,22 @@ kit = "cmi"
 # 需要 VerifiedRoot kit、根策略包、libBootProgress（boot-progress 尚未移植）与
 # IOStorageFamily，单开 UFS 在链接阶段必然失败。详见 porting.toml 的 storage 区。
 include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
-           "ShengUfs", "VirtioMmioBlock", "RamBlock", "VerifiedRoot", "ShengPreflight", "AppleKeyStoreState"]
+           "ShengUfs", "VirtioMmioBlock", "RamBlock", "ShengPreflight", "AppleKeyStoreState"]
 
 [kernel]
 defconfig = "cmi_defconfig"
-archives = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace",
+# provide-storage-audit.py installs the pinned ABI record that the two
+# build-virtio-mmio-bindings.py recipes read (build/storage-abi/interface-audit.json).
+# build-verified-root-probe.py needs an owner-signed policy bundle and a real
+# volume verification; build-boot-progress.py does not exist in the pinned
+# UniXNU revision. Neither can run on a clean CI runner.
+archives = ["provide-storage-audit.py",
+           "build-corecrypto-14.py", "build-corecrypto-14.py --namespace",
            "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES",
            "build-software-aes-bindings.py", "build-cmi-ufs.py", "component:ShengUfs",
            "component:VirtioMmioBlock", "component:RamBlock",
            "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",
            "build-virtio-mmio-bindings.py --component VirtioMmioBlock",
-           "build-verified-root-probe.py", "build-boot-progress.py",
            "build-libpthread-kernel.py", "component:AppleKeyStoreState"]
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 # 不引用 os:patches/xnu/series：该系列的第一项是 zzz-boot-progress.patch，它的
