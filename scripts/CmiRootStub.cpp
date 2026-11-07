@@ -56,3 +56,12 @@ int vr_verify_block(const struct vr_view *, uint64_t, const void *, size_t,
 extern "C" __attribute__((weak)) void boot_progress_poll(void)
 {
 }
+
+// payload.py::check_native_root requires _sheng_pmgr_run to be defined when
+// native-ufs-root=1 and sheng-pmgr=2 are set. XNU_SHENG_PMGR is off in this
+// build, so bsd_init.c never calls it; this no-op only satisfies that check.
+// It does NOT provide a real PMGR: AMFI may still panic with "No PMGR" on the
+// handset. Replace with the audited sheng-platform-power integration for real use.
+extern "C" void sheng_pmgr_run(void)
+{
+}
