@@ -46,3 +46,6 @@ CONFIG_XNU_NATIVE_RAM_BLOCK=y
 # _mockfs_vnodeop_opv_desc. The defconfig is the last layer applied, so turn
 # it off here. Measured on CI, 2026-11-06.
 CONFIG_XNU_SOURCE_MOCKFS=n
+
+# Refusal-only placeholder for the UFS verified-block link.
+CONFIG_XNU_EXTRA_LD_ARCHIVES="{tree}/build/cmi-root-stub/libCmiRootStub.a"
