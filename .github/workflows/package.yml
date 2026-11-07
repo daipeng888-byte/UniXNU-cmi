@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: UniXNU/UniXNU
-          ref: 18155b4e441b68d54f841f08b7633f90822eb596
+          ref: 82b847c4ac3f68a57024b3082ffa3a03442defd9
           path: UniXNU
           submodules: recursive
       - uses: actions/checkout@v4

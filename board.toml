@@ -21,16 +21,19 @@ kit = "cmi"
 # ShengUfs 暂不选中：该版本编译 NativeUfs 时强制 -DNATIVE_VERIFIED_BLOCK=1，链接
 # 需要 VerifiedRoot kit、根策略包、libBootProgress（boot-progress 尚未移植）与
 # IOStorageFamily，单开 UFS 在链接阶段必然失败。详见 porting.toml 的 storage 区。
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
+           "ShengUfs", "VirtioMmioBlock", "RamBlock", "VerifiedRoot", "ShengPreflight", "AppleKeyStoreState"]
 
 [kernel]
 defconfig = "cmi_defconfig"
-# [kernel] archives 暂不设置，由构建自动推导。显式写出会替换掉那份推导结果：2026-11-06
-# 实测两次，先报 "needs component entries for: ArmCpu, ArmDTPlatform, SoftwareAES"，
-# 补齐后又报 test -f "$CRYPTO_ARCHIVE" failed（corecrypto 与 libpthread 也要列全）。
-# 重新启用 UFS 时按 porting.toml storage 区的清单一次性写全。
-
-
+archives = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace",
+           "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES",
+           "build-software-aes-bindings.py", "build-cmi-ufs.py", "component:ShengUfs",
+           "component:VirtioMmioBlock", "component:RamBlock",
+           "build-virtio-mmio-bindings.py --component RamBlock --directory build/ram-block",
+           "build-virtio-mmio-bindings.py --component VirtioMmioBlock",
+           "build-verified-root-probe.py", "build-boot-progress.py",
+           "build-libpthread-kernel.py", "component:AppleKeyStoreState"]
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 # 不引用 os:patches/xnu/series：该系列的第一项是 zzz-boot-progress.patch，它的
 # bsd/kern/bsd_init.c 补丁块以 XNU_SHENG_PMGR（sheng 的 PMGR 电源管理补丁）为前提；
@@ -95,6 +98,10 @@ BUILDID_STRING = "cmi-menu-research"
 first_lba = 0x2C0000
 last_lba = 0x3B4B7FA
 lba_bytes = 4096
+windows = [
+  { name = "OS", component = "OS" },
+  { name = "SystemOS", component = "Cryptex1,SystemOS" },
+]
 
 [payload]
 volume = "CMIXNU"
@@ -105,7 +112,7 @@ size_mib = 64
 loader = "firmware"
 title = "Mi 10 Pro"
 # keepsyms/kt_fixed_zones 与 umi（同 SM8250）实测配置一致：panic 时保留符号，固定 zone 数。
-kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120"]
+kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120", "native-ufs-root=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true
@@ -125,5 +132,6 @@ unixnu = "../UniXNU"
 # 实测 qcom,msm-id = 0x164，故写作 "164"（模板示例 "207" 即 0x207）。
 chip_id = "164"
 unique_chip_id = "required"
+root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"
 # SM8250 的 8 个 CPU MPIDR 亲和值（umi 同 SoC 实测值，见 HANDOVER §7.8）。
 cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"

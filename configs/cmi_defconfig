@@ -27,7 +27,13 @@ CONFIG_XNU_DT_PANIC_REGION=y
 # 存储：ShengUfs 暂不选中。该版本编译 NativeUfs 时强制 -DNATIVE_VERIFIED_BLOCK=1，
 # 链接需要 VerifiedRoot kit、根策略包、libBootProgress 与 IOStorageFamily，单开 UFS
 # 会在链接阶段失败（2026-11-06 CI 实测）。等 boot-progress 与根卷栈就绪后再启用。
-# CONFIG_XNU_NATIVE_UFS is not set
+CONFIG_XNU_NATIVE_UFS=y
+CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y
+CONFIG_XNU_NATIVE_RAM_BLOCK=y
+CONFIG_XNU_VERIFIED_ROOT_PROBE=y
+CONFIG_XNU_BOOT_PROGRESS=y
+CONFIG_XNU_SHENG_PMGR=y
+CONFIG_XNU_VERIFIED_ROOT_ARCHIVE="{tree}/build/verified-root-os-xnu-bundle/libVerifiedRootProbe.a"
 
 # GPU：SM8250 是 Adreno 650，组件目录只有 A740 实现
 # CONFIG_XNU_NATIVE_ADRENO is not set
