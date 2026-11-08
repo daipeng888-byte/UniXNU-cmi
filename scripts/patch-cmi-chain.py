@@ -67,6 +67,23 @@ static uint16_t ufsStreamId (void)
 '''),
     # Pinned upstream returns false unconditionally here; port marble's
     # explicit, boot-arg-gated development branch.
+    # timerTicks() and the read/verify counters are defined INSIDE the
+    # NATIVE_VERIFIED_BLOCK block upstream, but doAsyncReadWrite() references
+    # them unconditionally outside it. Move them above that block so the
+    # unverified build still compiles (this is the pinned upstream's own
+    # latent bug, exposed only when the macro is off).
+    ('volatile uint64_t native_ufs_verify_ticks = 0, native_ufs_read_ticks = 0;\n'
+     'static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\\n\\tmrs %0, cntpct_el0" : "=r" (v)); return v;}\n'
+     'volatile uint32_t native_ufs_integrity_failures = 0;',
+     ''),
+    ('// Data objects of the root image (version 2 manifest), recorded by startRoot before windows are configured.',
+     '''// Timing/counter helpers live outside the verification block: the read path
+// uses them in every build (upstream only ever compiled with the macro on).
+volatile uint64_t native_ufs_verify_ticks = 0, native_ufs_read_ticks = 0;
+static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\\n\\tmrs %0, cntpct_el0" : "=r" (v)); return v;}
+volatile uint32_t native_ufs_integrity_failures = 0;
+
+// Data objects of the root image (version 2 manifest), recorded by startRoot before windows are configured.'''),
     ('#else\n      return false; // Root publication requires owner verification in every build.\n#endif',
      '''#else
       uint32_t allowUnverified = 0;
@@ -150,6 +167,9 @@ def main():
             print('== cmi attempt5: build-arm-driver.py anchor missing', file=sys.stderr)
             raise SystemExit(1)
         text = text.replace(BUILD_DRIVER_OLD, BUILD_DRIVER_NEW)
+        # Keep the full compiler output so a -Werror failure is diagnosable.
+        text = text.replace("raise SystemExit(result.stdout[-3500:])",
+                            "raise SystemExit(result.stdout)")
         if 'import os' not in text:
             text = text.replace('import json\n', 'import json\nimport os\n', 1)
         text = text.replace('#!/usr/bin/env python3\n',
