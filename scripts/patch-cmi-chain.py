@@ -84,6 +84,23 @@ static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\\n\
 volatile uint32_t native_ufs_integrity_failures = 0;
 
 // Data objects of the root image (version 2 manifest), recorded by startRoot before windows are configured.'''),
+    # Unverified publication leaves gPendingUuid[] empty (no owner signature).
+    # Upstream waits for an IOMedia with that UUID for 30s and then fails with
+    # "SystemOS signed volume not found"; marble's fork skips the wait instead.
+    # Observed on cmi: WINDOWS found=2 prepared=2 published=1, then
+    # stage=media publication / Waiting for signed UUID (empty).
+    ('      gRootDiagnostic.publicationWindow = index;\n'
+     '      bool ready = false;\n'
+     '      // Diagnostic mode affects reporting only, never the dependency gate.',
+     '''      gRootDiagnostic.publicationWindow = index;
+      // Unverified publication has no signed volume UUID. Do not stall the
+      // publisher on an empty UUID; the root mount itself waits for OS media.
+      if (!uuid[0]) {
+        IOLog ("NativeUfs: %s unverified, media wait skipped\\n", device->windowLabel ());
+        return true;
+      }
+      bool ready = false;
+      // Diagnostic mode affects reporting only, never the dependency gate.'''),
     ('#else\n      return false; // Root publication requires owner verification in every build.\n#endif',
      '''#else
       uint32_t allowUnverified = 0;
