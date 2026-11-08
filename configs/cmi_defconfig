@@ -50,4 +50,6 @@ CONFIG_XNU_SOURCE_MOCKFS=n
 # attempt-5: two link-time helpers. The UFS driver no longer uses
 # NATIVE_VERIFIED_BLOCK, so CmiRootStub only supplies the PMGR/ boot
 # progress no-ops; CmiUnverifiedRoot supplies the XNU root lookup.
-CONFIG_XNU_EXTRA_LD_ARCHIVES="{tree}/build/cmi-root-stub/libCmiRootStub.a {tree}/build/cmi-unverified-root/libCmiUnverifiedRoot.a"
+# Without NATIVE_VERIFIED_BLOCK no object references vr_*/PMGR symbols, so a
+# plain static archive would be dropped by the linker. Force-load both.
+CONFIG_XNU_EXTRA_LD_ARCHIVES="-Wl,-force_load,{tree}/build/cmi-root-stub/libCmiRootStub.a -Wl,-force_load,{tree}/build/cmi-unverified-root/libCmiUnverifiedRoot.a"
