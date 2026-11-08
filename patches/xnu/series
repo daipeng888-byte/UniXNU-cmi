@@ -7,3 +7,7 @@
 # prefix 写法与 profiles/os/*/patches/xnu/series 一致。
 component:XnuPrelink/patches/xnu-10063.141.1-security-init.patch
 component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
+
+# Development-only: ignore APFS root-auth failure when root-unverified=1.
+# Must come last: its context is produced by the arch series owner-audit patch.
+cmi-root-unverified.patch
