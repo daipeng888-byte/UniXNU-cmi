@@ -47,5 +47,7 @@ CONFIG_XNU_NATIVE_RAM_BLOCK=y
 # it off here. Measured on CI, 2026-11-06.
 CONFIG_XNU_SOURCE_MOCKFS=n
 
-# Refusal-only placeholder for the UFS verified-block link.
-CONFIG_XNU_EXTRA_LD_ARCHIVES="{tree}/build/cmi-root-stub/libCmiRootStub.a"
+# attempt-5: two link-time helpers. The UFS driver no longer uses
+# NATIVE_VERIFIED_BLOCK, so CmiRootStub only supplies the PMGR/ boot
+# progress no-ops; CmiUnverifiedRoot supplies the XNU root lookup.
+CONFIG_XNU_EXTRA_LD_ARCHIVES="{tree}/build/cmi-root-stub/libCmiRootStub.a {tree}/build/cmi-unverified-root/libCmiUnverifiedRoot.a"
