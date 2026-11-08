@@ -31,7 +31,7 @@ defconfig = "cmi_defconfig"
 # build-verified-root-probe.py needs an owner-signed policy bundle and a real
 # volume verification; build-boot-progress.py does not exist in the pinned
 # UniXNU revision. Neither can run on a clean CI runner.
-archives = ["provide-storage-audit.py",
+archives = ["patch-cmi-chain.py", "provide-storage-audit.py",
            "build-corecrypto-14.py", "build-corecrypto-14.py --namespace",
            "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES",
            "build-software-aes-bindings.py", "build-cmi-ufs.py", "component:ShengUfs",
@@ -41,9 +41,9 @@ archives = ["provide-storage-audit.py",
            # baseline derives the object name from the archive stem, while the
            # binder writes Native<Name>.o; provide byte-identical aliases.
            "provide-storage-object-aliases.py",
-           # ShengUfs is force-compiled with NATIVE_VERIFIED_BLOCK=1 and needs
-           # the vr_* symbols. No owner-signed policy exists on CI: refusal-only.
-           "build-cmi-root-stub.py",
+           # attempt-5: the driver compiles its explicit unverified branch
+           # (gated by two boot args), so only the two link-time no-ops remain.
+           "build-cmi-root-stub.py", "build-cmi-unverified-root.py",
            "build-libpthread-kernel.py", "component:AppleKeyStoreState"]
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 # 不引用 os:patches/xnu/series：该系列的第一项是 zzz-boot-progress.patch，它的
@@ -123,7 +123,13 @@ size_mib = 64
 loader = "firmware"
 title = "Mi 10 Pro"
 # keepsyms/kt_fixed_zones 与 umi（同 SM8250）实测配置一致：panic 时保留符号，固定 zone 数。
-kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120", "sheng-pmgr=2", "native-ufs-root=1"]
+kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120",
+  "sheng-pmgr=2", "native-ufs-root=1",
+  # SM8250 UFS apps-SMMU stream (upstream ShengUfs defaults to sheng 0x60).
+  "native-ufs-stream=0xe0", "native-ufs-smmu-takeover=1",
+  # Development-only: publish the root windows without an owner policy.
+  # BOTH must be set; otherwise publication still refuses.
+  "native-ufs-allow-unverified=1", "root-unverified=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true
