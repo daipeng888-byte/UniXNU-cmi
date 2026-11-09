@@ -71,6 +71,10 @@ jobs:
             echo 'Set the repository secret UNIXNU_UNIQUE_CHIP_ID: the platform seed of the device, hex digits.' >&2
             exit 1
           fi
+      - name: data seed
+        run: |
+          curl -fsSL -o device/scripts/owner-data-8g.dbr https://raw.githubusercontent.com/Riceneeder/unixnu-tb128fu-ci/80cf77545ad7af876c8f582b0d1a1ed7bfb92264/build-inputs/owner-data-8g.dbr
+          test "$(stat -f%z device/scripts/owner-data-8g.dbr)" = 1040512
       - name: package
         working-directory: device
         env:
@@ -78,7 +82,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           OS_PROFILE: ${{ inputs.os }}
         run: |
-          args=(--os "$OS_PROFILE" --uefi ../uefi-cmi)
+          args=(--os "$OS_PROFILE" --uefi ../uefi-cmi \
+            --data-ramdisk "$GITHUB_WORKSPACE/device/scripts/owner-data-8g.dbr")
           scripts/package.sh "${args[@]}"
       - name: images
         uses: actions/upload-artifact@v4
