@@ -56,6 +56,156 @@
  
  	/*
  	 *	Create the device service.
+@@ -1018,3 +1023,149 @@
+ 
+ 	bsd_scale_setup(scale);
+ }
++
++// SPDX-License-Identifier: MIT
++// cmi in-kernel boot progress: draws stage text on the GOP framebuffer that
++// video_console.c binds via boot_progress_bind(vinfo...). Self-contained; no
++// umi/XNU_SHENG_PMGR/owner-root dependencies. Mirrors the proven pixel writer
++// used by scripts/xnu-panic-screen.c (the format-2 panic screen).
++#include <stdint.h>
++#include <stddef.h>
++#include "boot_progress.h"
++
++#if defined(XNU_CMI_BOOTDIAG) && XNU_CMI_BOOTDIAG
++#include "BootProgressFont.h"
++
++/* 1080x2340 panel: 5x12 glyphs at scale 3 => 18x36 px, 60 cols / 55 rows.
++ * Keep the top 3/16 of the panel untouched: DarwinBoot + the entry probe
++ * paint the green/blue/magenta handoff bars there, and those are the only
++ * evidence for the MMU-off stages. All text starts below them. */
++#define BP_SCALE 3
++#define BP_CELL  (6 * BP_SCALE)
++#define BP_LINE  (14 * BP_SCALE)
++#define BP_COLOR 0xFFFFFFFFu
++
++static volatile uintptr_t bp_base;
++static unsigned bp_w, bp_h, bp_rb, bp_top;
++static int      bp_bound;
++static unsigned bp_x, bp_y;
++
++/* Stages that fire before the framebuffer is bound (arm_vm_init, early
++ * bootstrap) would otherwise be lost. Buffer them and replay at bind time. */
++#define BP_EARLY_MAX 24
++#define BP_EARLY_LEN 72
++static char bp_early[BP_EARLY_MAX][BP_EARLY_LEN];
++static unsigned bp_early_n;
++
++static void bp_putc(int c);
++
++static void bp_line(const char *s, char prefix) {
++    unsigned i;
++    if (!s) return;
++    if (bp_bound) {
++        bp_putc(prefix); bp_putc(' ');
++        for (i = 0; s[i]; i++) bp_putc((unsigned char)s[i]);
++        bp_putc('\n');
++        return;
++    }
++    if (bp_early_n >= BP_EARLY_MAX) return;
++    char *dst = bp_early[bp_early_n++];
++    dst[0] = prefix; dst[1] = ' ';
++    for (i = 0; i + 3 < BP_EARLY_LEN && s[i]; i++) dst[i + 2] = s[i];
++    dst[i + 2] = '\0';
++}
++
++/* IO-mapped framebuffer: use aligned volatile 32-bit stores only. Never do
++ * memset/memcpy over a large region (the mapping may be device memory), and
++ * never touch the top 3/16 where the green/blue/magenta bars live. This is
++ * the exact pixel writer proven by DarwinBoot's DiagDraw() and the format-2
++ * panic screen. */
++static inline void bp_pixel(unsigned x, unsigned y, uint32_t color) {
++    *(volatile uint32_t *)(bp_base + (uint64_t)y * bp_rb + (uint64_t)x * 4) = color;
++}
++
++static void bp_putc(int c) {
++    unsigned row, col, dy, dx;
++    const unsigned cell = BP_CELL, line = BP_LINE;
++    if (!bp_bound) return;
++    if (c == '\n') { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_y = bp_top; return; }
++    if (c == '\r') { bp_x = 0; return; }
++    if (c == '\t') { bp_x += 4 * cell; return; }
++    if (c < 32 || c > 126) return;
++    if (bp_x + cell > bp_w) { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_y = bp_top; }
++    /* Black box behind each glyph: keeps text legible over menu/splash leftovers
++     * without clearing the screen (which would erase the handoff bars). */
++    for (dy = 0; dy < line; dy++)
++        for (dx = 0; dx < cell; dx++)
++            bp_pixel(bp_x + dx, bp_y + dy, 0xFF000000u);
++    uint64_t glyph = bp_glyph[c - 32];
++    uint32_t top = (uint32_t)(glyph >> 32), bottom = (uint32_t)glyph;
++    for (row = 0; row < 12; row++) {
++        uint32_t data = (row < 6) ? (top >> (row * 5)) : (bottom >> ((row - 6) * 5));
++        for (col = 0; col < 5; col++) {
++            if ((data >> col) & 1) {
++                for (dy = 0; dy < BP_SCALE; dy++)
++                    for (dx = 0; dx < BP_SCALE; dx++)
++                        bp_pixel(bp_x + col * BP_SCALE + dx,
++                                 bp_y + row * BP_SCALE + dy, BP_COLOR);
++            }
++        }
++    }
++    bp_x += cell;
++}
++
++void boot_progress_init(void) { }
++void boot_progress_start(void) { }
++/* Bound is enough: stages before clock_service_create() must be visible too. */
++int  boot_progress_active(void) { return bp_bound; }
++
++void boot_progress_bind(uintptr_t base, unsigned w, unsigned h, unsigned rowbytes, unsigned depth) {
++    if (!base || depth != 32 || !w || !h || !rowbytes) { bp_bound = 0; return; }
++    if (bp_bound && base == bp_base && w == bp_w && h == bp_h && rowbytes == bp_rb) return;
++    bp_base = base; bp_w = w; bp_h = h; bp_rb = rowbytes;
++    /* Three 1/16 bands are the loader + entry-probe bars. Start below them. */
++    bp_top = (3U * h) / 16U;
++    if (bp_top + BP_LINE >= h) bp_top = 0;
++    bp_bound = 1;
++    bp_x = 0; bp_y = bp_top;
++    const char *hdr = "* cmi boot progress [ATTEMPT9-BOOTDIAG]";
++    for (const char *p = hdr; *p; p++) bp_putc((unsigned char)*p);
++    bp_putc('\n');
++    /* Replay everything that happened before the framebuffer was usable. */
++    for (unsigned i = 0; i < bp_early_n; i++) {
++        for (const char *p = bp_early[i]; *p; p++) bp_putc((unsigned char)*p);
++        bp_putc('\n');
++    }
++    bp_early_n = 0;   /* replay once only, even if bind is called again */
++}
++
++void boot_progress_putc(char c) { if (bp_bound) bp_putc((unsigned char)c); }
++
++void boot_progress_stage(const char *s) {
++    if (!s) return;
++    bp_line(s, '*');
++}
++
++void boot_progress_process_stage(int pid, const char *name, const char *st) {
++    (void)pid; (void)name;
++    if (!st) return;
++    bp_line(st, '>');
++}
++
++void boot_progress_irq(uint64_t pc, uint64_t psr, uint64_t sp) { (void)pc; (void)psr; (void)sp; }
++void boot_progress_poll(void) {}
++void boot_progress_user_breakpoint(void *st, unsigned esr) { (void)st; (void)esr; }
++void boot_progress_user_abort(void *st, unsigned esr, uint64_t fa) {
++    (void)st; (void)esr; (void)fa;
++    if (boot_progress_active()) { const char *m = "! user abort\n"; for (; *m; m++) bp_putc(*m); }
++}
++void boot_progress_critical_exit(int pid, char *buf, unsigned long n) {
++    (void)pid; (void)buf; (void)n;
++    if (boot_progress_active()) { const char *m = "! critical exit\n"; for (; *m; m++) bp_putc(*m); }
++}
++void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t code) {
++    (void)pid; (void)name; (void)rv; (void)ns; (void)code;
++    if (boot_progress_active()) { const char *m = "= proc exit\n"; for (; *m; m++) bp_putc(*m); }
++}
++
++#endif /* XNU_CMI_BOOTDIAG */
 --- a/osfmk/console/video_console.c
 +++ b/osfmk/console/video_console.c
 @@ -1,3 +1,4 @@
@@ -208,23 +358,20 @@
  	}
  
  	if (task) {
---- a/osfmk/conf/files
-+++ b/osfmk/conf/files
-@@ -191,6 +191,7 @@
- osfmk/kern/smr.c		standard
- osfmk/kern/stack.c			standard
- osfmk/kern/startup.c			standard
-+osfmk/kern/BootProgress.c		standard
- osfmk/kern/sync_sema.c		standard
- osfmk/kern/syscall_subr.c		standard
- osfmk/kern/syscall_sw.c		standard
 --- a/osfmk/kern/boot_progress.h
 +++ b/osfmk/kern/boot_progress.h
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,41 @@
 +// SPDX-License-Identifier: MIT
 +#ifndef XNU_CMI_BOOT_PROGRESS_H
 +#define XNU_CMI_BOOT_PROGRESS_H
 +#include <stdint.h>
++/* Self-contained gate. Defining it here keeps CFLAGS byte-for-byte
++ * identical to the baseline: injecting -D via CONFIG_XNU_EXTRA_CFLAGS
++ * made Makefile.template's ".CFLAGS: ALWAYS" rebuild all 529 C
++ * sources and broke the bootstrap LDFILELIST pass on CI. */
++#ifndef XNU_CMI_BOOTDIAG
++#define XNU_CMI_BOOTDIAG 1
++#endif
 +#if defined(XNU_CMI_BOOTDIAG) && XNU_CMI_BOOTDIAG
 +void boot_progress_init(void);
 +void boot_progress_start(void);
@@ -312,151 +459,3 @@
 +  0x0004D64000000000, 0x0000000000000000,
 +};
 +#endif
---- a/osfmk/kern/BootProgress.c
-+++ b/osfmk/kern/BootProgress.c
-@@ -0,0 +1,145 @@
-+// SPDX-License-Identifier: MIT
-+// cmi in-kernel boot progress: draws stage text on the GOP framebuffer that
-+// video_console.c binds via boot_progress_bind(vinfo...). Self-contained; no
-+// umi/XNU_SHENG_PMGR/owner-root dependencies. Mirrors the proven pixel writer
-+// used by scripts/xnu-panic-screen.c (the format-2 panic screen).
-+#include <stdint.h>
-+#include <stddef.h>
-+#include "boot_progress.h"
-+
-+#if defined(XNU_CMI_BOOTDIAG) && XNU_CMI_BOOTDIAG
-+#include "BootProgressFont.h"
-+
-+/* 1080x2340 panel: 5x12 glyphs at scale 3 => 18x36 px, 60 cols / 55 rows.
-+ * Keep the top 3/16 of the panel untouched: DarwinBoot + the entry probe
-+ * paint the green/blue/magenta handoff bars there, and those are the only
-+ * evidence for the MMU-off stages. All text starts below them. */
-+#define BP_SCALE 3
-+#define BP_CELL  (6 * BP_SCALE)
-+#define BP_LINE  (14 * BP_SCALE)
-+#define BP_COLOR 0xFFFFFFFFu
-+
-+static volatile uintptr_t bp_base;
-+static unsigned bp_w, bp_h, bp_rb, bp_top;
-+static int      bp_bound;
-+static unsigned bp_x, bp_y;
-+
-+/* Stages that fire before the framebuffer is bound (arm_vm_init, early
-+ * bootstrap) would otherwise be lost. Buffer them and replay at bind time. */
-+#define BP_EARLY_MAX 24
-+#define BP_EARLY_LEN 72
-+static char bp_early[BP_EARLY_MAX][BP_EARLY_LEN];
-+static unsigned bp_early_n;
-+
-+static void bp_putc(int c);
-+
-+static void bp_line(const char *s, char prefix) {
-+    unsigned i;
-+    if (!s) return;
-+    if (bp_bound) {
-+        bp_putc(prefix); bp_putc(' ');
-+        for (i = 0; s[i]; i++) bp_putc((unsigned char)s[i]);
-+        bp_putc('\n');
-+        return;
-+    }
-+    if (bp_early_n >= BP_EARLY_MAX) return;
-+    char *dst = bp_early[bp_early_n++];
-+    dst[0] = prefix; dst[1] = ' ';
-+    for (i = 0; i + 3 < BP_EARLY_LEN && s[i]; i++) dst[i + 2] = s[i];
-+    dst[i + 2] = '\0';
-+}
-+
-+/* IO-mapped framebuffer: use aligned volatile 32-bit stores only. Never do
-+ * memset/memcpy over a large region (the mapping may be device memory), and
-+ * never touch the top 3/16 where the green/blue/magenta bars live. This is
-+ * the exact pixel writer proven by DarwinBoot's DiagDraw() and the format-2
-+ * panic screen. */
-+static inline void bp_pixel(unsigned x, unsigned y, uint32_t color) {
-+    *(volatile uint32_t *)(bp_base + (uint64_t)y * bp_rb + (uint64_t)x * 4) = color;
-+}
-+
-+static void bp_putc(int c) {
-+    unsigned row, col, dy, dx;
-+    const unsigned cell = BP_CELL, line = BP_LINE;
-+    if (!bp_bound) return;
-+    if (c == '\n') { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_y = bp_top; return; }
-+    if (c == '\r') { bp_x = 0; return; }
-+    if (c == '\t') { bp_x += 4 * cell; return; }
-+    if (c < 32 || c > 126) return;
-+    if (bp_x + cell > bp_w) { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_y = bp_top; }
-+    /* Black box behind each glyph: keeps text legible over menu/splash leftovers
-+     * without clearing the screen (which would erase the handoff bars). */
-+    for (dy = 0; dy < line; dy++)
-+        for (dx = 0; dx < cell; dx++)
-+            bp_pixel(bp_x + dx, bp_y + dy, 0xFF000000u);
-+    uint64_t glyph = bp_glyph[c - 32];
-+    uint32_t top = (uint32_t)(glyph >> 32), bottom = (uint32_t)glyph;
-+    for (row = 0; row < 12; row++) {
-+        uint32_t data = (row < 6) ? (top >> (row * 5)) : (bottom >> ((row - 6) * 5));
-+        for (col = 0; col < 5; col++) {
-+            if ((data >> col) & 1) {
-+                for (dy = 0; dy < BP_SCALE; dy++)
-+                    for (dx = 0; dx < BP_SCALE; dx++)
-+                        bp_pixel(bp_x + col * BP_SCALE + dx,
-+                                 bp_y + row * BP_SCALE + dy, BP_COLOR);
-+            }
-+        }
-+    }
-+    bp_x += cell;
-+}
-+
-+void boot_progress_init(void) { }
-+void boot_progress_start(void) { }
-+/* Bound is enough: stages before clock_service_create() must be visible too. */
-+int  boot_progress_active(void) { return bp_bound; }
-+
-+void boot_progress_bind(uintptr_t base, unsigned w, unsigned h, unsigned rowbytes, unsigned depth) {
-+    if (!base || depth != 32 || !w || !h || !rowbytes) { bp_bound = 0; return; }
-+    if (bp_bound && base == bp_base && w == bp_w && h == bp_h && rowbytes == bp_rb) return;
-+    bp_base = base; bp_w = w; bp_h = h; bp_rb = rowbytes;
-+    /* Three 1/16 bands are the loader + entry-probe bars. Start below them. */
-+    bp_top = (3U * h) / 16U;
-+    if (bp_top + BP_LINE >= h) bp_top = 0;
-+    bp_bound = 1;
-+    bp_x = 0; bp_y = bp_top;
-+    const char *hdr = "* cmi boot progress [ATTEMPT9-BOOTDIAG]";
-+    for (const char *p = hdr; *p; p++) bp_putc((unsigned char)*p);
-+    bp_putc('\n');
-+    /* Replay everything that happened before the framebuffer was usable. */
-+    for (unsigned i = 0; i < bp_early_n; i++) {
-+        for (const char *p = bp_early[i]; *p; p++) bp_putc((unsigned char)*p);
-+        bp_putc('\n');
-+    }
-+    bp_early_n = 0;   /* replay once only, even if bind is called again */
-+}
-+
-+void boot_progress_putc(char c) { if (bp_bound) bp_putc((unsigned char)c); }
-+
-+void boot_progress_stage(const char *s) {
-+    if (!s) return;
-+    bp_line(s, '*');
-+}
-+
-+void boot_progress_process_stage(int pid, const char *name, const char *st) {
-+    (void)pid; (void)name;
-+    if (!st) return;
-+    bp_line(st, '>');
-+}
-+
-+void boot_progress_irq(uint64_t pc, uint64_t psr, uint64_t sp) { (void)pc; (void)psr; (void)sp; }
-+void boot_progress_poll(void) {}
-+void boot_progress_user_breakpoint(void *st, unsigned esr) { (void)st; (void)esr; }
-+void boot_progress_user_abort(void *st, unsigned esr, uint64_t fa) {
-+    (void)st; (void)esr; (void)fa;
-+    if (boot_progress_active()) { const char *m = "! user abort\n"; for (; *m; m++) bp_putc(*m); }
-+}
-+void boot_progress_critical_exit(int pid, char *buf, unsigned long n) {
-+    (void)pid; (void)buf; (void)n;
-+    if (boot_progress_active()) { const char *m = "! critical exit\n"; for (; *m; m++) bp_putc(*m); }
-+}
-+void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t code) {
-+    (void)pid; (void)name; (void)rv; (void)ns; (void)code;
-+    if (boot_progress_active()) { const char *m = "= proc exit\n"; for (; *m; m++) bp_putc(*m); }
-+}
-+
-+#endif /* XNU_CMI_BOOTDIAG */
