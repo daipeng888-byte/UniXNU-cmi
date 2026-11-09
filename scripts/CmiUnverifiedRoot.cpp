@@ -84,3 +84,12 @@ native_verified_block_volume_device(const char *uuid, dev_t *device, char *path,
 	strlcpy(path, candidatePath, size);
 	return 1;
 }
+
+// attempt-8: kern_exec.o sees XNU_OWNER_BOOT_MANIFEST=1 only so the scratch
+// Data mount compiles; IOKitBSDInit.cpo keeps it 0, so this is the sole
+// definition. The ADT already carries a development boot-manifest-hash.
+extern "C" int
+native_owner_publish_boot_manifest(dev_t, const char *, dev_t, const char *)
+{
+	return 1;
+}
