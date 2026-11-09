@@ -91,6 +91,41 @@ jobs:
           args=(--os "$OS_PROFILE" --uefi ../uefi-cmi \
             --data-ramdisk "$GITHUB_WORKSPACE/device/scripts/owner-data-8g.dbr")
           scripts/package.sh "${args[@]}"
+      - name: dump build diagnostics
+        if: failure()
+        working-directory: device
+        run: |
+          echo "===== tree roots ====="
+          find ../UniXNU/out -maxdepth 6 -type d -name tree 2>/dev/null | head -5
+          TREE=$(find ../UniXNU/out -maxdepth 6 -type d -name tree 2>/dev/null | head -1)
+          echo "TREE=$TREE"
+          echo "===== all compile/archives logs containing errors ====="
+          find ../UniXNU/out -type f \( -name "*.log" -o -name "*.txt" \) 2>/dev/null > /tmp/loglist
+          echo "log count: $(wc -l < /tmp/loglist)"
+          while IFS= read -r f; do
+            if grep -qiE "error:|fatal error|No rule to make|undefined symbol|clang: error|not found" "$f" 2>/dev/null; then
+              echo "----- $f -----"
+              grep -niE "error:|fatal error|No rule to make|undefined symbol|clang: error|not found" "$f" | head -25
+            fi
+          done < /tmp/loglist
+          echo "===== filelists ====="
+          find ../UniXNU/out -type f \( -name "*.filelist" -o -name "link.filelist" \) 2>/dev/null | head -20 | while read -r f; do echo "  $f  $(wc -l < "$f") lines"; done
+          echo "===== object count ====="
+          find ../UniXNU/out -type f -name "*.o" 2>/dev/null | wc -l
+          echo "===== archive logs tail ====="
+          find ../UniXNU/out -type f -name "*.log" -path "*logs*" 2>/dev/null | head -10 | while read -r f; do echo "--- $f"; tail -25 "$f"; done
+          echo "===== missing objects referenced by filelist ====="
+          FL=$(find ../UniXNU/out -type f -name "osfmk.filelist" 2>/dev/null | head -1)
+          if [ -n "$FL" ]; then
+            miss=0
+            while IFS= read -r o; do
+              [ -z "$o" ] && continue
+              if [ ! -f "$o" ] && [ ! -f "$TREE/$o" ]; then echo "  MISSING $o"; miss=$((miss+1)); [ $miss -ge 20 ] && break; fi
+            done < "$FL"
+            echo "  missing count (capped 20): $miss"
+          else
+            echo "  osfmk.filelist NOT FOUND"
+          fi
       - name: images
         uses: actions/upload-artifact@v4
         with:
