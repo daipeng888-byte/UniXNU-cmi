@@ -1,0 +1,469 @@
+--- a/osfmk/arm/arm_init.c
++++ b/osfmk/arm/arm_init.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2007-2021 Apple Inc. All rights reserved.
+  *
+@@ -370,6 +371,8 @@
+ 
+ 	PE_init_platform(FALSE, args); /* Get platform expert set up */
+ 
++	boot_progress_init();
++
+ #if __arm64__
+ 	configure_timer_apple_regs();
+ 	wfe_timeout_configure();
+@@ -519,7 +522,9 @@
+ 	__builtin_arm_wsr("pan", 1);
+ #endif  /* __ARM_PAN_AVAILABLE__ */
+ 
++	boot_progress_stage("arm_vm_init enter");
+ 	arm_vm_init(xmaxmem, args);
++	boot_progress_stage("arm_vm_init returned");
+ 
+ 	if (debug_boot_arg) {
+ 		patch_low_glo();
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
+  *
+@@ -221,6 +222,7 @@
+ static inline void
+ kernel_bootstrap_log(const char *message)
+ {
++	boot_progress_stage(message);
+ 	if ((startup_debug & STARTUP_DEBUG_VERBOSE) &&
+ 	    startup_phase >= STARTUP_SUB_KPRINTF) {
+ 		kprintf("kernel_bootstrap: %s\n", message);
+@@ -231,6 +233,7 @@
+ static inline void
+ kernel_bootstrap_thread_log(const char *message)
+ {
++	boot_progress_stage(message);
+ 	if ((startup_debug & STARTUP_DEBUG_VERBOSE) &&
+ 	    startup_phase >= STARTUP_SUB_KPRINTF) {
+ 		kprintf("kernel_bootstrap_thread: %s\n", message);
+@@ -649,6 +652,8 @@
+ 	 */
+ 	kernel_bootstrap_thread_log("clock_service_create");
+ 	clock_service_create();
++
++	boot_progress_start();
+ 
+ 	/*
+ 	 *	Create the device service.
+--- a/osfmk/console/video_console.c
++++ b/osfmk/console/video_console.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
+  *
+@@ -1230,6 +1231,7 @@
+ void
+ vcputc_options(char c, __unused bool poll)
+ {
++	if (boot_progress_active()) { boot_progress_putc(c); return; }
+ 	if (gc_initialized && gc_enabled) {
+ 		VCPUTC_LOCK_LOCK();
+ 		if (gc_enabled) {
+@@ -2896,6 +2898,9 @@
+ 			vinfo = new_vinfo;
+ 		}
+ 
++		boot_progress_bind(vinfo.v_baseaddr, vinfo.v_width, vinfo.v_height,
++		    vinfo.v_rowbytes, vinfo.v_depth);
++
+ 		// If we changed the virtual address, remove the old mapping
+ 		if (newVideoVirt != 0) {
+ 			if (lastVideoVirt && lastVideoMapSize) {                                                /* Was the framebuffer mapped before? */
+@@ -3049,6 +3054,9 @@
+ #endif
+ 	}
+ }
++
++	boot_progress_bind(vinfo.v_baseaddr, vinfo.v_width, vinfo.v_height,
++	    vinfo.v_rowbytes, vinfo.v_depth);
+ 
+ void vcattach(void); /* XXX gcc 4 warning cleanup */
+ 
+--- a/osfmk/console/serial_console.c
++++ b/osfmk/console/serial_console.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2000-2020 Apple, Inc. All rights reserved.
+  *
+@@ -251,6 +252,7 @@
+ static inline void
+ _cnputc(char c, bool poll)
+ {
++	if (boot_progress_active()) { boot_progress_putc(c); return; }
+ 	bool in_debugger = (kernel_debugger_entry_count > 0);
+ 	const uint32_t idx = get_cons_ops_index();
+ 
+--- a/pexpert/arm/pe_kprintf.c
++++ b/pexpert/arm/pe_kprintf.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2000-2019 Apple Inc. All rights reserved.
+  */
+@@ -58,6 +59,7 @@
+ static void
+ PE_init_kprintf(void)
+ {
++	if (boot_progress_active()) { PE_kputc = boot_progress_putc; return; }
+ 	if (serial_init()) {
+ 		PE_kputc = serial_putc_crlf;
+ 	} else {
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2000-2021 Apple Inc. All rights reserved.
+  *
+@@ -563,6 +564,8 @@
+ 	execargs_cache = zalloc_permanent(bsd_simul_execs * sizeof(vm_offset_t),
+ 	    ZALIGN(vm_offset_t));
+ 
++	boot_progress_stage("bsd_init enter");
++
+ 	if (current_task() != kernel_task) {
+ 		printf("bsd_init: We have a problem, "
+ 		    "current task is not kernel task\n");
+@@ -888,7 +891,9 @@
+ #endif
+ 
+ 		bsd_init_kprintf("vfs_mountroot\n");
++		boot_progress_stage("vfs_mountroot enter");
+ 		if (0 == (err = vfs_mountroot())) {
++			boot_progress_stage("vfs_mountroot mounted; authentication pending");
+ 			break;
+ 		}
+ 		rootdevice[0] = '\0';
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
+  *
+@@ -1343,7 +1344,9 @@
+ 	/*
+ 	 * Actually load the image file we previously decided to load.
+ 	 */
++	boot_progress_process_stage(proc_getpid(p),p->p_name,"exec load_machfile enter");
+ 	lret = load_machfile(imgp, mach_header, thread, &map, &load_result);
++	boot_progress_process_stage(proc_getpid(p),p->p_name,"exec load_machfile returned");
+ 	if (lret != LOAD_SUCCESS) {
+ 		error = load_return_to_errno(lret);
+ 
+@@ -7381,6 +7384,7 @@
+ 
+ 	assert(execargs_free_count >= 0);
+ 
++	boot_progress_stage("load_init_program enter");
+ 	execargs_lock_unlock();
+ 
+ 	if (cache_index == -1) {
+@@ -7632,6 +7636,7 @@
+ 	 * approve of exec, kill and return immediately.
+ 	 */
+ 	if (imgp->ip_mac_return != 0) {
++		boot_progress_process_stage(proc_getpid(p),p->p_name,"exec MAC policy REFUSED");
+ 		KERNEL_DEBUG_CONSTANT(BSDDBG_CODE(DBG_BSD_PROC, BSD_PROC_EXITREASON_CREATE) | DBG_FUNC_NONE,
+ 		    proc_getpid(p), OS_REASON_EXEC, EXEC_EXIT_REASON_SECURITY_POLICY, 0, 0);
+ 		signature_failure_reason = os_reason_create(OS_REASON_EXEC, EXEC_EXIT_REASON_SECURITY_POLICY);
+@@ -7795,6 +7800,7 @@
+ 		 */
+ 
+ 		error = proc_process_signature(p, &signature_failure_reason);
++		boot_progress_process_stage(proc_getpid(p),p->p_name,error ? "exec process signature REFUSED" : "exec process signature accepted");
+ 	}
+ 
+ 	if (0 == error) {
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2012-2023 Apple Inc. All rights reserved.
+  *
+@@ -1228,6 +1229,8 @@
+ 	exception_type_t           exception = EXC_BREAKPOINT;
+ 	mach_exception_data_type_t codes[2]  = {EXC_ARM_BREAKPOINT};
+ 	mach_msg_type_number_t     numcodes  = 2;
++
++	boot_progress_user_breakpoint(state, esr);
+ 
+ #if __has_feature(ptrauth_calls)
+ 	if (ESR_EC(esr) == ESR_EC_BRK_AARCH64 &&
+@@ -1678,6 +1681,8 @@
+ 		exit_with_jit_exception(current_proc());
+ 	}
+ 
++	boot_progress_user_abort(state, esr, fault_addr);
++
+ 	exception_triage(exc, codes, numcodes);
+ 	__builtin_unreachable();
+ }
+@@ -2111,6 +2116,7 @@
+ 
+ 
+ 	sleh_interrupt_handler_prologue(state, DBG_INTR_TYPE_OTHER);
++	boot_progress_irq(get_saved_state_pc(state), get_saved_state_cpsr(state), get_saved_state_sp(state));
+ 
+ #if USE_APPLEARMSMP
+ 	PE_handle_ext_interrupt();
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1,3 +1,4 @@
++#include <kern/boot_progress.h>
+ /*
+  * Copyright (c) 2000-2016 Apple Inc. All rights reserved.
+  *
+@@ -1858,6 +1859,7 @@
+ 	} else {
+ 		/* For processes that aren't launchd, just use the process name and pid */
+ 		snprintf(prefix_str_buf, sizeof(prefix_str_buf), "%s[%d] exited", p->p_name, proc_getpid(p));
++		boot_progress_critical_exit(proc_getpid(p), prefix_str_buf, sizeof(prefix_str_buf));
+ 		prefix_str = prefix_str_buf;
+ 	}
+ 
+@@ -1894,6 +1896,9 @@
+ 
+ 	if (p->p_crash_behavior != 0 || p == initproc) {
+ 		proc_handle_critical_exit(p, rv);
++		boot_progress_exit(proc_getpid(p),p->p_name,rv,
++		    p->p_exit_reason ? p->p_exit_reason->osr_namespace : 0,
++		    p->p_exit_reason ? p->p_exit_reason->osr_code : 0);
+ 	}
+ 
+ 	if (task) {
+--- a/osfmk/conf/files
++++ b/osfmk/conf/files
+@@ -191,6 +191,7 @@
+ osfmk/kern/smr.c		standard
+ osfmk/kern/stack.c			standard
+ osfmk/kern/startup.c			standard
++osfmk/kern/BootProgress.c		standard
+ osfmk/kern/sync_sema.c		standard
+ osfmk/kern/syscall_subr.c		standard
+ osfmk/kern/syscall_sw.c		standard
+--- a/osfmk/kern/boot_progress.h
++++ b/osfmk/kern/boot_progress.h
+@@ -0,0 +1,34 @@
++// SPDX-License-Identifier: MIT
++#ifndef XNU_CMI_BOOT_PROGRESS_H
++#define XNU_CMI_BOOT_PROGRESS_H
++#include <stdint.h>
++#if defined(XNU_CMI_BOOTDIAG) && XNU_CMI_BOOTDIAG
++void boot_progress_init(void);
++void boot_progress_start(void);
++int  boot_progress_active(void);
++void boot_progress_bind(uintptr_t, unsigned, unsigned, unsigned, unsigned);
++void boot_progress_putc(char);
++void boot_progress_stage(const char *);
++void boot_progress_irq(uint64_t, uint64_t, uint64_t);
++void boot_progress_poll(void);
++void boot_progress_user_breakpoint(void *, unsigned);
++void boot_progress_user_abort(void *, unsigned, uint64_t);
++void boot_progress_critical_exit(int, char *, unsigned long);
++void boot_progress_process_stage(int, const char *, const char *);
++void boot_progress_exit(int, const char *, int, unsigned, uint64_t);
++#else
++#define boot_progress_init() ((void)0)
++#define boot_progress_start() ((void)0)
++#define boot_progress_active() 0
++#define boot_progress_bind(...) ((void)0)
++static inline void boot_progress_putc(char c) { (void)c; }
++#define boot_progress_stage(s) ((void)0)
++#define boot_progress_irq(...) ((void)0)
++#define boot_progress_poll() ((void)0)
++#define boot_progress_user_breakpoint(...) ((void)0)
++#define boot_progress_user_abort(...) ((void)0)
++#define boot_progress_critical_exit(...) ((void)0)
++#define boot_progress_process_stage(...) ((void)0)
++#define boot_progress_exit(...) ((void)0)
++#endif
++#endif
+--- a/osfmk/kern/BootProgressFont.h
++++ b/osfmk/kern/BootProgressFont.h
+@@ -0,0 +1,54 @@
++// 5x12 framebuffer font (Android / DiagFont.h GLYPH_FONT), used only by BootProgress.c.
++#ifndef BP_FONT_H
++#define BP_FONT_H
++static const uint64_t bp_glyph[95] = {
++  0x0000000000000000, 0x0842108000020084,
++  0x0005294000000000, 0x15F528000000295F,
++  0x1C52F88000023E94, 0x088556400004D542,
++  0x04528800000B2725, 0x0002108000000000,
++  0x0421108800821042, 0x1084108200221108,
++  0x0957548000000000, 0x3E42000000000084,
++  0x0000000000223000, 0x3E00000000000000,
++  0x0000000000471000, 0x0884420000008442,
++  0x2318A88000022A31, 0x08429880000F9084,
++  0x1108C5C0000F8444, 0x1C4443E000074610,
++  0x14A62100000423E9, 0x26D087E000074610,
++  0x1E10C5C000074631, 0x088443E000010844,
++  0x1D18C5C000074631, 0x3D18C5C000074610,
++  0x08E2000000471000, 0x08E2000000223000,
++  0x0222220000082082, 0x01F00000000003E0,
++  0x2082082000008888, 0x1108C5C000020084,
++  0x2B98C5C0000F05B5, 0x2318A8800008C63F,
++  0x1D2949E00007CA52, 0x0210C5C000074421,
++  0x252949E00007CA52, 0x1E1087E0000F8421,
++  0x1E1087E000008421, 0x0210C5C000074639,
++  0x3F18C6200008C631, 0x084211C000071084,
++  0x1084238000032508, 0x0654C6200008C525,
++  0x02108420000F8421, 0x2B5DC6200008C631,
++  0x2B59CE200008C739, 0x2318C5C000074631,
++  0x1F18C5E000008421, 0x2318C5C001075631,
++  0x1F18C5E00008C525, 0x1C10C5C000074610,
++  0x084213E000021084, 0x2318C62000074631,
++  0x1518C6200002114A, 0x2B18C620000556B5,
++  0x08A546200008C54A, 0x08A5462000021084,
++  0x088443E0000F8442, 0x0421084E00E10842,
++  0x0821042000084108, 0x1084210E00E42108,
++  0x0008A88000000000, 0x0000000001F00000,
++  0x0000010400000000, 0x20E00000000B663E,
++  0x22F084200007C631, 0x22E0000000074421,
++  0x23E84200000F4631, 0x22E000000007443F,
++  0x1E21498000010842, 0x22E000001D187A31,
++  0x26D084200008C631, 0x0860100000071084,
++  0x10C020000C94A108, 0x0A9084200008A4A3,
++  0x084210C000071084, 0x2AB000000008D6B5,
++  0x26D000000008C631, 0x22E0000000074631,
++  0x22F000000210BE31, 0x23E0000021087A31,
++  0x26D0000000008421, 0x22E0000000074506,
++  0x04F1080000064842, 0x23100000000B6631,
++  0x2310000000022951, 0x23100000000556B5,
++  0x151000000008A884, 0x231000001D185B31,
++  0x11F00000000F8444, 0x0642109801821084,
++  0x0842108000021084, 0x3042108300321084,
++  0x0004D64000000000, 0x0000000000000000
++};
++#endif
+--- a/osfmk/kern/BootProgress.c
++++ b/osfmk/kern/BootProgress.c
+@@ -0,0 +1,114 @@
++// SPDX-License-Identifier: MIT
++// cmi in-kernel boot progress: draws stage text on the GOP framebuffer that
++// video_console.c binds via boot_progress_bind(vinfo...). Self-contained; no
++// umi/XNU_SHENG_PMGR/owner-root dependencies. Mirrors the proven pixel writer
++// used by scripts/xnu-panic-screen.c (the format-2 panic screen).
++#include <stdint.h>
++#include <stddef.h>
++#include <string.h>
++#include "boot_progress.h"
++#include "BootProgressFont.h"
++
++#if defined(XNU_CMI_BOOTDIAG) && XNU_CMI_BOOTDIAG
++
++#define BP_SCALE 1
++#define BP_CELL  (6 * BP_SCALE)
++#define BP_LINE  (14 * BP_SCALE)
++#define BP_COLOR 0xFFFFFFFFu
++
++static volatile uintptr_t bp_base;
++static unsigned bp_w, bp_h, bp_rb;
++static int      bp_bound, bp_started, bp_enabled;
++static unsigned bp_x, bp_y;
++
++static void bp_clear(void) {
++    uint8_t *fb = (uint8_t *)(uintptr_t)bp_base;
++    if (fb) memset(fb, 0, (size_t)bp_h * bp_rb);
++}
++
++static void bp_scroll(void) {
++    uint8_t *fb = (uint8_t *)(uintptr_t)bp_base;
++    if (!fb || bp_h <= BP_LINE) { bp_y = 0; return; }
++    size_t shift = (size_t)BP_LINE * bp_rb;
++    size_t keep  = (size_t)(bp_h - BP_LINE) * bp_rb;
++    memmove(fb, fb + shift, keep);
++    memset(fb + (size_t)(bp_h - BP_LINE) * bp_rb, 0, shift);
++    bp_y = bp_h - BP_LINE;
++}
++
++static void bp_putc(int c) {
++    unsigned row, col, dy, dx;
++    const unsigned cell = BP_CELL, line = BP_LINE;
++    if (c == '\n') { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_scroll(); return; }
++    if (c == '\r') { bp_x = 0; return; }
++    if (c == '\t') { bp_x += 4 * cell; return; }
++    if (c < 32 || c > 126) return;
++    if (bp_x + cell > bp_w) { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_scroll(); }
++    if (bp_y + line > bp_h) return;
++    uint64_t glyph = bp_glyph[c - 32];
++    uint32_t top = (uint32_t)(glyph >> 32), bottom = (uint32_t)glyph;
++    for (row = 0; row < 12; row++) {
++        uint32_t data = (row < 6) ? (top >> (row * 5)) : (bottom >> ((row - 6) * 5));
++        for (col = 0; col < 5; col++) {
++            if ((data >> col) & 1) {
++                for (dy = 0; dy < BP_SCALE; dy++)
++                    for (dx = 0; dx < BP_SCALE; dx++)
++                        *(volatile uint32_t *)(bp_base +
++                            (uint64_t)(bp_y + row * BP_SCALE + dy) * bp_rb +
++                            (uint64_t)(bp_x + col * BP_SCALE + dx) * 4) = BP_COLOR;
++            }
++        }
++    }
++    bp_x += cell;
++}
++
++void boot_progress_init(void) { bp_enabled = 1; }
++void boot_progress_start(void) { bp_started = 1; }
++int  boot_progress_active(void) { return bp_bound && bp_started; }
++
++void boot_progress_bind(uintptr_t base, unsigned w, unsigned h, unsigned rowbytes, unsigned depth) {
++    (void)bp_enabled;
++    if (!base || depth != 32) { bp_bound = 0; return; }
++    bp_base = base; bp_w = w; bp_h = h; bp_rb = rowbytes;
++    bp_x = 0; bp_y = 0;
++    bp_clear();
++    const char *hdr = "* cmi boot progress";
++    for (const char *p = hdr; *p; p++) bp_putc((unsigned char)*p);
++    bp_putc('\n'); bp_putc('\n');
++    bp_bound = 1;
++}
++
++void boot_progress_putc(char c) { if (bp_bound) bp_putc((unsigned char)c); }
++
++void boot_progress_stage(const char *s) {
++    if (!boot_progress_active() || !s) return;
++    bp_putc('*'); bp_putc(' ');
++    for (const char *p = s; *p; p++) bp_putc((unsigned char)*p);
++    bp_putc('\n');
++}
++
++void boot_progress_process_stage(int pid, const char *name, const char *st) {
++    (void)pid; (void)name;
++    if (!boot_progress_active() || !st) return;
++    bp_putc('>'); bp_putc(' ');
++    for (const char *p = st; *p; p++) bp_putc((unsigned char)*p);
++    bp_putc('\n');
++}
++
++void boot_progress_irq(uint64_t pc, uint64_t psr, uint64_t sp) { (void)pc; (void)psr; (void)sp; }
++void boot_progress_poll(void) {}
++void boot_progress_user_breakpoint(void *st, unsigned esr) { (void)st; (void)esr; }
++void boot_progress_user_abort(void *st, unsigned esr, uint64_t fa) {
++    (void)st; (void)esr; (void)fa;
++    if (boot_progress_active()) { const char *m = "! user abort\n"; for (; *m; m++) bp_putc(*m); }
++}
++void boot_progress_critical_exit(int pid, char *buf, unsigned long n) {
++    (void)pid; (void)buf; (void)n;
++    if (boot_progress_active()) { const char *m = "! critical exit\n"; for (; *m; m++) bp_putc(*m); }
++}
++void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t code) {
++    (void)pid; (void)name; (void)rv; (void)ns; (void)code;
++    if (boot_progress_active()) { const char *m = "= proc exit\n"; for (; *m; m++) bp_putc(*m); }
++}
++
++#endif /* XNU_CMI_BOOTDIAG */

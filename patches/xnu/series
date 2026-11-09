@@ -11,3 +11,8 @@ component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
 # Development-only: ignore APFS root-auth failure when root-unverified=1.
 # Must come last: its context is produced by the arch series owner-audit patch.
 cmi-root-unverified.patch
+
+# attempt-9 诊断：cmi 自含式屏显启动进度包。经 CONFIG_XNU_EXTRA_CFLAGS 注入
+# XNU_CMI_BOOTDIAG，由 osfmk/conf/files 随内核编译，完全绕过核心被锁死的
+# XNU_BOOT_PROGRESS 与 UFS/owner-root 门槛。zzz 前缀保证最后应用。
+zzz-cmi-boot-progress.patch

@@ -75,3 +75,10 @@ CONFIG_XNU_OWNER_DATA_MOUNT=y
 # OwnerData APFS volume inside the pinned DBRDISK1 Data seed (parsed from APSB).
 CONFIG_XNU_OWNER_DATA_UNVERIFIED=1
 CONFIG_XNU_OWNER_DATA_VOLUME_UUID="1191290C-A628-4767-B286-9AB1EB43134F"
+
+# attempt-9 诊断：把 XNU_CMI_BOOTDIAG=1 注入内核 CFLAGS（经核心已存在的
+# XNU_EXTRA_CFLAGS 钩子，不被锁死）。BootProgress.c 由 osfmk/conf/files
+# 随内核编译链接，各启动阶段进度/崩因直接画到 GOP 帧存，用于定位
+# attempt-8 "splash 后盲崩" 的真实崩点。不触碰 XNU_BOOT_PROGRESS（cmi 无
+# UFS/owner-root，该路被核心门槛堵死，本宏完全绕开）。
+CONFIG_XNU_EXTRA_CFLAGS="-DXNU_CMI_BOOTDIAG=1"
