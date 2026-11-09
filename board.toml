@@ -129,7 +129,10 @@ kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120",
   "native-ufs-stream=0xe0", "native-ufs-smmu-takeover=1",
   # Development-only: publish the root windows without an owner policy.
   # BOTH must be set; otherwise publication still refuses.
-  "native-ufs-allow-unverified=1", "root-unverified=1"]
+  "native-ufs-allow-unverified=1", "root-unverified=1",
+  # Load the APFS kext before the owner SystemOS mount, and keep the
+  # board bring-up launch-constraint bypass used by the successful exec.
+  "offline-apfs-load=1", "sheng-no-lc=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true
