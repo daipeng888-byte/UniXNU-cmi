@@ -153,5 +153,7 @@ unixnu = "../UniXNU"
 chip_id = "164"
 unique_chip_id = "required"
 root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"
+# attempt-8: DarwinBoot fills in the packed Data seed address here.
+packed_data_ramdisk = true
 # SM8250 的 8 个 CPU MPIDR 亲和值（umi 同 SoC 实测值，见 HANDOVER §7.8）。
 cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
