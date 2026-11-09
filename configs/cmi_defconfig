@@ -79,6 +79,10 @@ CONFIG_XNU_OWNER_DATA_VOLUME_UUID="1191290C-A628-4767-B286-9AB1EB43134F"
 # attempt-9 诊断：把 XNU_CMI_BOOTDIAG=1 注入内核 CFLAGS（经核心已存在的
 # XNU_EXTRA_CFLAGS 钩子，不被锁死）。BootProgress.c 由 osfmk/conf/files
 # 随内核编译链接，各启动阶段进度/崩因直接画到 GOP 帧存，用于定位
-# attempt-8 "splash 后盲崩" 的真实崩点。不触碰 XNU_BOOT_PROGRESS（cmi 无
+# attempt-8 三条色条之后的黑箱区。不触碰 XNU_BOOT_PROGRESS（cmi 无
 # UFS/owner-root，该路被核心门槛堵死，本宏完全绕开）。
-CONFIG_XNU_EXTRA_CFLAGS="-DXNU_CMI_BOOTDIAG=1"
+#
+# 重要：核心脚本是 EXTRA_CFLAGS=${XNU_EXTRA_CFLAGS:-<7 个默认 -Wno>}，
+# 用的是 ":-"（值为空才用默认）。一旦设置本变量，那 7 个警告抑制参数
+# 会全部丢失，可能把 CI 编译搞挂。因此必须把默认值原样带上，再追加宏。
+CONFIG_XNU_EXTRA_CFLAGS="-Wno-reserved-identifier -Wno-pre-c11-compat -Wno-missing-designated-field-initializers -Wno-suggest-override -Wno-unnecessary-virtual-specifier -Wno-suggest-destructor-override -Wno-ms-bitfield-padding -DXNU_CMI_BOOTDIAG=1"

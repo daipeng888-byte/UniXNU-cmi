@@ -63,15 +63,7 @@
  /*
   * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
   *
-@@ -1230,6 +1231,7 @@
- void
- vcputc_options(char c, __unused bool poll)
- {
-+	if (boot_progress_active()) { boot_progress_putc(c); return; }
- 	if (gc_initialized && gc_enabled) {
- 		VCPUTC_LOCK_LOCK();
- 		if (gc_enabled) {
-@@ -2896,6 +2898,9 @@
+@@ -2896,6 +2897,9 @@
  			vinfo = new_vinfo;
  		}
  
@@ -81,46 +73,16 @@
  		// If we changed the virtual address, remove the old mapping
  		if (newVideoVirt != 0) {
  			if (lastVideoVirt && lastVideoMapSize) {                                                /* Was the framebuffer mapped before? */
-@@ -3049,6 +3054,9 @@
- #endif
- 	}
- }
+@@ -3056,6 +3060,9 @@
+ vcattach(void)
+ {
+ 	vm_initialized = TRUE;
 +
 +	boot_progress_bind(vinfo.v_baseaddr, vinfo.v_width, vinfo.v_height,
 +	    vinfo.v_rowbytes, vinfo.v_depth);
  
- void vcattach(void); /* XXX gcc 4 warning cleanup */
- 
---- a/osfmk/console/serial_console.c
-+++ b/osfmk/console/serial_console.c
-@@ -1,3 +1,4 @@
-+#include <kern/boot_progress.h>
- /*
-  * Copyright (c) 2000-2020 Apple, Inc. All rights reserved.
-  *
-@@ -251,6 +252,7 @@
- static inline void
- _cnputc(char c, bool poll)
- {
-+	if (boot_progress_active()) { boot_progress_putc(c); return; }
- 	bool in_debugger = (kernel_debugger_entry_count > 0);
- 	const uint32_t idx = get_cons_ops_index();
- 
---- a/pexpert/arm/pe_kprintf.c
-+++ b/pexpert/arm/pe_kprintf.c
-@@ -1,3 +1,4 @@
-+#include <kern/boot_progress.h>
- /*
-  * Copyright (c) 2000-2019 Apple Inc. All rights reserved.
-  */
-@@ -58,6 +59,7 @@
- static void
- PE_init_kprintf(void)
- {
-+	if (boot_progress_active()) { PE_kputc = boot_progress_putc; return; }
- 	if (serial_init()) {
- 		PE_kputc = serial_putc_crlf;
- 	} else {
+ #if defined(CONFIG_VC_PROGRESS_METER_SUPPORT)
+ 	const boot_args * bootargs  = (typeof(bootargs))PE_state.bootArgs;
 --- a/bsd/kern/bsd_init.c
 +++ b/bsd/kern/bsd_init.c
 @@ -1,3 +1,4 @@
@@ -296,10 +258,10 @@
 --- a/osfmk/kern/BootProgressFont.h
 +++ b/osfmk/kern/BootProgressFont.h
 @@ -0,0 +1,54 @@
-+// 5x12 framebuffer font (Android / DiagFont.h GLYPH_FONT), used only by BootProgress.c.
++// 5x12 framebuffer font, extracted verbatim from DarwinBoot/DiagFont.h GLYPH_FONT.
 +#ifndef BP_FONT_H
 +#define BP_FONT_H
-+static const uint64_t bp_glyph[95] = {
++static const uint64_t bp_glyph[96] = {
 +  0x0000000000000000, 0x0842108000020084,
 +  0x0005294000000000, 0x15F528000000295F,
 +  0x1C52F88000023E94, 0x088556400004D542,
@@ -347,12 +309,12 @@
 +  0x151000000008A884, 0x231000001D185B31,
 +  0x11F00000000F8444, 0x0642109801821084,
 +  0x0842108000021084, 0x3042108300321084,
-+  0x0004D64000000000, 0x0000000000000000
++  0x0004D64000000000, 0x0000000000000000,
 +};
 +#endif
 --- a/osfmk/kern/BootProgress.c
 +++ b/osfmk/kern/BootProgress.c
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,143 @@
 +// SPDX-License-Identifier: MIT
 +// cmi in-kernel boot progress: draws stage text on the GOP framebuffer that
 +// video_console.c binds via boot_progress_bind(vinfo...). Self-contained; no
@@ -360,46 +322,72 @@
 +// used by scripts/xnu-panic-screen.c (the format-2 panic screen).
 +#include <stdint.h>
 +#include <stddef.h>
-+#include <string.h>
 +#include "boot_progress.h"
 +#include "BootProgressFont.h"
 +
 +#if defined(XNU_CMI_BOOTDIAG) && XNU_CMI_BOOTDIAG
 +
-+#define BP_SCALE 1
++/* 1080x2340 panel: 5x12 glyphs at scale 3 => 18x36 px, 60 cols / 55 rows.
++ * Keep the top 3/16 of the panel untouched: DarwinBoot + the entry probe
++ * paint the green/blue/magenta handoff bars there, and those are the only
++ * evidence for the MMU-off stages. All text starts below them. */
++#define BP_SCALE 3
 +#define BP_CELL  (6 * BP_SCALE)
 +#define BP_LINE  (14 * BP_SCALE)
 +#define BP_COLOR 0xFFFFFFFFu
 +
 +static volatile uintptr_t bp_base;
-+static unsigned bp_w, bp_h, bp_rb;
-+static int      bp_bound, bp_started, bp_enabled;
++static unsigned bp_w, bp_h, bp_rb, bp_top;
++static int      bp_bound;
 +static unsigned bp_x, bp_y;
 +
-+static void bp_clear(void) {
-+    uint8_t *fb = (uint8_t *)(uintptr_t)bp_base;
-+    if (fb) memset(fb, 0, (size_t)bp_h * bp_rb);
++/* Stages that fire before the framebuffer is bound (arm_vm_init, early
++ * bootstrap) would otherwise be lost. Buffer them and replay at bind time. */
++#define BP_EARLY_MAX 24
++#define BP_EARLY_LEN 72
++static char bp_early[BP_EARLY_MAX][BP_EARLY_LEN];
++static unsigned bp_early_n;
++
++static void bp_putc(int c);
++
++static void bp_line(const char *s, char prefix) {
++    unsigned i;
++    if (bp_bound) {
++        bp_putc(prefix); bp_putc(' ');
++        for (i = 0; s[i]; i++) bp_putc((unsigned char)s[i]);
++        bp_putc('\n');
++        return;
++    }
++    if (bp_early_n >= BP_EARLY_MAX || !s) return;
++    char *dst = bp_early[bp_early_n++];
++    dst[0] = prefix; dst[1] = ' ';
++    for (i = 0; i + 3 < BP_EARLY_LEN && s[i]; i++) dst[i + 2] = s[i];
++    dst[i + 2] = '\0';
 +}
 +
-+static void bp_scroll(void) {
-+    uint8_t *fb = (uint8_t *)(uintptr_t)bp_base;
-+    if (!fb || bp_h <= BP_LINE) { bp_y = 0; return; }
-+    size_t shift = (size_t)BP_LINE * bp_rb;
-+    size_t keep  = (size_t)(bp_h - BP_LINE) * bp_rb;
-+    memmove(fb, fb + shift, keep);
-+    memset(fb + (size_t)(bp_h - BP_LINE) * bp_rb, 0, shift);
-+    bp_y = bp_h - BP_LINE;
++/* IO-mapped framebuffer: use aligned volatile 32-bit stores only. Never do
++ * memset/memcpy over a large region (the mapping may be device memory), and
++ * never touch the top 3/16 where the green/blue/magenta bars live. This is
++ * the exact pixel writer proven by DarwinBoot's DiagDraw() and the format-2
++ * panic screen. */
++static inline void bp_pixel(unsigned x, unsigned y, uint32_t color) {
++    *(volatile uint32_t *)(bp_base + (uint64_t)y * bp_rb + (uint64_t)x * 4) = color;
 +}
 +
 +static void bp_putc(int c) {
 +    unsigned row, col, dy, dx;
 +    const unsigned cell = BP_CELL, line = BP_LINE;
-+    if (c == '\n') { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_scroll(); return; }
++    if (!bp_bound) return;
++    if (c == '\n') { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_y = bp_top; return; }
 +    if (c == '\r') { bp_x = 0; return; }
 +    if (c == '\t') { bp_x += 4 * cell; return; }
 +    if (c < 32 || c > 126) return;
-+    if (bp_x + cell > bp_w) { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_scroll(); }
-+    if (bp_y + line > bp_h) return;
++    if (bp_x + cell > bp_w) { bp_x = 0; bp_y += line; if (bp_y + line > bp_h) bp_y = bp_top; }
++    /* Black box behind each glyph: keeps text legible over menu/splash leftovers
++     * without clearing the screen (which would erase the handoff bars). */
++    for (dy = 0; dy < line; dy++)
++        for (dx = 0; dx < cell; dx++)
++            bp_pixel(bp_x + dx, bp_y + dy, 0xFF000000u);
 +    uint64_t glyph = bp_glyph[c - 32];
 +    uint32_t top = (uint32_t)(glyph >> 32), bottom = (uint32_t)glyph;
 +    for (row = 0; row < 12; row++) {
@@ -408,46 +396,49 @@
 +            if ((data >> col) & 1) {
 +                for (dy = 0; dy < BP_SCALE; dy++)
 +                    for (dx = 0; dx < BP_SCALE; dx++)
-+                        *(volatile uint32_t *)(bp_base +
-+                            (uint64_t)(bp_y + row * BP_SCALE + dy) * bp_rb +
-+                            (uint64_t)(bp_x + col * BP_SCALE + dx) * 4) = BP_COLOR;
++                        bp_pixel(bp_x + col * BP_SCALE + dx,
++                                 bp_y + row * BP_SCALE + dy, BP_COLOR);
 +            }
 +        }
 +    }
 +    bp_x += cell;
 +}
 +
-+void boot_progress_init(void) { bp_enabled = 1; }
-+void boot_progress_start(void) { bp_started = 1; }
-+int  boot_progress_active(void) { return bp_bound && bp_started; }
++void boot_progress_init(void) { }
++void boot_progress_start(void) { }
++/* Bound is enough: stages before clock_service_create() must be visible too. */
++int  boot_progress_active(void) { return bp_bound; }
 +
 +void boot_progress_bind(uintptr_t base, unsigned w, unsigned h, unsigned rowbytes, unsigned depth) {
-+    (void)bp_enabled;
-+    if (!base || depth != 32) { bp_bound = 0; return; }
++    if (!base || depth != 32 || !w || !h || !rowbytes) { bp_bound = 0; return; }
++    if (bp_bound && base == bp_base && w == bp_w && h == bp_h && rowbytes == bp_rb) return;
 +    bp_base = base; bp_w = w; bp_h = h; bp_rb = rowbytes;
-+    bp_x = 0; bp_y = 0;
-+    bp_clear();
-+    const char *hdr = "* cmi boot progress";
-+    for (const char *p = hdr; *p; p++) bp_putc((unsigned char)*p);
-+    bp_putc('\n'); bp_putc('\n');
++    /* Three 1/16 bands are the loader + entry-probe bars. Start below them. */
++    bp_top = (3U * h) / 16U;
++    if (bp_top + BP_LINE >= h) bp_top = 0;
 +    bp_bound = 1;
++    bp_x = 0; bp_y = bp_top;
++    const char *hdr = "* cmi boot progress [ATTEMPT9-BOOTDIAG]";
++    for (const char *p = hdr; *p; p++) bp_putc((unsigned char)*p);
++    bp_putc('\n');
++    /* Replay everything that happened before the framebuffer was usable. */
++    for (unsigned i = 0; i < bp_early_n; i++) {
++        for (const char *p = bp_early[i]; *p; p++) bp_putc((unsigned char)*p);
++        bp_putc('\n');
++    }
 +}
 +
 +void boot_progress_putc(char c) { if (bp_bound) bp_putc((unsigned char)c); }
 +
 +void boot_progress_stage(const char *s) {
-+    if (!boot_progress_active() || !s) return;
-+    bp_putc('*'); bp_putc(' ');
-+    for (const char *p = s; *p; p++) bp_putc((unsigned char)*p);
-+    bp_putc('\n');
++    if (!s) return;
++    bp_line(s, '*');
 +}
 +
 +void boot_progress_process_stage(int pid, const char *name, const char *st) {
 +    (void)pid; (void)name;
-+    if (!boot_progress_active() || !st) return;
-+    bp_putc('>'); bp_putc(' ');
-+    for (const char *p = st; *p; p++) bp_putc((unsigned char)*p);
-+    bp_putc('\n');
++    if (!st) return;
++    bp_line(st, '>');
 +}
 +
 +void boot_progress_irq(uint64_t pc, uint64_t psr, uint64_t sp) { (void)pc; (void)psr; (void)sp; }
