@@ -53,3 +53,19 @@ CONFIG_XNU_SOURCE_MOCKFS=n
 # Without NATIVE_VERIFIED_BLOCK no object references vr_*/PMGR symbols, so a
 # plain static archive would be dropped by the linker. Force-load both.
 CONFIG_XNU_EXTRA_LD_ARCHIVES="-Wl,-force_load,{tree}/build/cmi-root-stub/libCmiRootStub.a -Wl,-force_load,{tree}/build/cmi-unverified-root/libCmiUnverifiedRoot.a"
+
+
+# attempt-6: mount the SystemOS cryptex so dyld can open the shared cache.
+# Verbatim combination from milacy/UniXNU-marble configs/marble-root_defconfig;
+# its device record says the first tail-root boot stopped at
+# "Library not loaded: /usr/lib/libSystem.B.dylib (no dyld cache)" because
+# OWNER_CACHE_MOUNT and OWNER_UNION_SYSTEMOS were off. The two block hooks
+# (native_verified_block_root_authorized / volume_device) are supplied by
+# CmiUnverifiedRoot.cpp, already force-loaded into this kernel.
+CONFIG_XNU_OWNER_CACHE_MOUNT=y
+CONFIG_XNU_OWNER_CACHE_UNVERIFIED=1
+CONFIG_XNU_OWNER_CACHE_STARTUP=y
+CONFIG_XNU_OWNER_BOOT_MANIFEST=n
+CONFIG_XNU_OWNER_CACHE_VOLUME_UUID="8846FE78-2910-4297-AF97-D59BB6F8FC16"
+CONFIG_XNU_OWNER_UNION_SYSTEMOS=y
+CONFIG_XNU_OWNER_DATA_MOUNT=n
