@@ -129,7 +129,10 @@ kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120",
   "native-ufs-stream=0xe0", "native-ufs-smmu-takeover=1",
   # Development-only: publish the root windows without an owner policy.
   # BOTH must be set; otherwise publication still refuses.
-  "native-ufs-allow-unverified=1", "root-unverified=1"]
+  "native-ufs-allow-unverified=1", "root-unverified=1",
+  # attempt-9/launchd: dev escape hatch that lets zzyc-owner-skip-launch-constraints
+  # clear the AMFI Launch Constraint gate for launchd on an offline root.
+  "sheng-no-lc=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true

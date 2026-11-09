@@ -11,3 +11,14 @@ component:XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
 # Development-only: ignore APFS root-auth failure when root-unverified=1.
 # Must come last: its context is produced by the arch series owner-audit patch.
 cmi-root-unverified.patch
+
+# attempt-9/launchd: enable the native trust-cache runtime (XNU_NATIVE_TRUST_CACHE)
+# so an offline/unverified root can satisfy AMFI/code-signing for launchd. Safe on
+# its own: it only initializes the runtime, which is the prerequisite for any
+# offline trust cache to be consulted during exec.
+native-trust-cache-runtime.patch
+# attempt-9/launchd: skip the AMFI "Launch Constraint Violation" gate for owner/
+# cryptex binaries when boot arg sheng-no-lc=1. Dev escape hatch; it does NOT relax
+# the code-signature check itself, but clears the constraint-category mismatch
+# that kills launchd on an offline root.
+zzyc-owner-skip-launch-constraints.patch

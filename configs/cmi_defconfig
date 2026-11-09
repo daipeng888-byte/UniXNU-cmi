@@ -31,6 +31,10 @@ CONFIG_XNU_NATIVE_UFS=y
 CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y
 CONFIG_XNU_NATIVE_RAM_BLOCK=y
 
+# attempt-9/launchd: enable the native trust-cache runtime so an offline root can
+# satisfy AMFI during launchd exec. Pairs with native-trust-cache-runtime.patch.
+CONFIG_XNU_NATIVE_TRUST_CACHE=y
+
 # GPU：SM8250 是 Adreno 650，组件目录只有 A740 实现
 # CONFIG_XNU_NATIVE_ADRENO is not set
 
