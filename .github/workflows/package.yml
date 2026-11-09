@@ -48,7 +48,13 @@ jobs:
           submodules: recursive
       - name: tools
         run: |
-          brew install dtc llvm lld cmake mtools ninja bison pkgconf blacktop/tap/ipsw
+          # The ipsw bottle occasionally 504s on GitHub releases; retry transient failures.
+          for attempt in 1 2 3; do
+            brew install dtc llvm lld cmake mtools ninja bison pkgconf blacktop/tap/ipsw && break
+            echo "brew attempt $attempt failed; retrying in 15s"
+            sleep 15
+          done
+          command -v ipsw >/dev/null || { echo 'ipsw install failed after 3 attempts'; exit 1; }
           {
             echo "/opt/homebrew/opt/llvm/bin"
             echo "/opt/homebrew/opt/lld/bin"
