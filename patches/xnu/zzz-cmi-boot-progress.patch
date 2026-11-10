@@ -338,9 +338,11 @@
  	PE_handle_ext_interrupt();
 --- a/bsd/kern/kern_exit.c
 +++ b/bsd/kern/kern_exit.c
-@@ -1,3 +1,6 @@
-+/* BSD component: osfmk/kern is not on this component's include path; use local externs. */
-+extern void boot_progress_exit(int, const char *, int, unsigned, uint64_t);
+@@ -1,3 +1,8 @@
++/* BSD component: osfmk/kern is not on this component's include path; use local externs.
++ * Built-in types only: these sit before any #include, so uint64_t/size_t are
++ * not defined yet. On arm64 unsigned long long is 64-bit. */
++extern void boot_progress_exit(int, const char *, int, unsigned, unsigned long long);
 +extern void boot_progress_critical_exit(int, char *, unsigned long);
  /*
   * Copyright (c) 2000-2016 Apple Inc. All rights reserved.
