@@ -27,6 +27,29 @@ __attribute__((weak)) int native_ufs_dpu_window_build(uintptr_t base) { (void)ba
 __attribute__((weak)) int qcom_usb_debug_register_framebuffer(const void *p) { (void)p; return 0; }
 __attribute__((weak)) uint64_t qcom_usb_debug_write(const void *p, uint64_t n) { (void)p; (void)n; return 0; }
 
+/* GopFramebuffer's optional GPU/Adreno trace providers (NativeGpuTrace.h,
+ * NativeLegacyDisplay.cpp). These are weak_import there; a zero return makes
+ * the direct-scanout and fence paths decline themselves, which is correct for
+ * a CPU-presentation-only board. */
+__attribute__((weak)) int native_adreno_fences(uint32_t *submitted, uint32_t *retired) {
+    if (submitted) *submitted = 0;
+    if (retired) *retired = 0;
+    return 0;
+}
+__attribute__((weak)) int native_adreno_fences_detail(uint32_t *a, uint32_t *b, uint32_t *c) {
+    (void)a; (void)b; (void)c;
+    return 0;
+}
+__attribute__((weak)) int native_gpu_trace_enabled(void) { return 0; }
+__attribute__((weak)) void native_gpu_trace_record(uint32_t event, uint32_t pid,
+        const uint64_t *values, uint32_t count) {
+    (void)event; (void)pid; (void)values; (void)count;
+}
+__attribute__((weak)) uint32_t native_gpu_trace_snapshot(void *out, uint32_t bytes) {
+    (void)out; (void)bytes;
+    return 0;
+}
+
 /* IOSurface getters are absolute bindings in original-bindings.o; do not
  * define them here or the linker would see two different symbol kinds. */
 
