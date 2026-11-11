@@ -382,7 +382,7 @@ command += ['-mgeneral-regs-only', '-Wall', '-Wextra', '-Werror', '-Wno-unused-p
             # meta_features.h only while the compiler runs there. Name the directory explicitly
             # as well, so the include does not depend on the working directory alone.
             '-I', str(record['directory']),
-            '-I', str(ROOT / '.cache/xnu-work/osfmk'), '-I', str(OUT)]
+            '-I', str(ROOT / '.cache/xnu-work/osfmk'), '-I', str(OUT), '-I', str(packages[0].parent)]
 command += suppressions
 run(command, cwd=record['directory'])
 (OUT / 'probe-compile-command.json').write_text(json.dumps(command, indent=2) + '\n')
@@ -451,7 +451,7 @@ while i < len(arguments):
 cpufreq_command += ['-mgeneral-regs-only', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
                     '-Wno-c99-designator', '-Wno-reorder-init-list',
                     '-Wno-deprecated-enum-enum-conversion', '-Wno-missing-designated-field-initializers',
-                    '-I', str(record['directory']), '-I', str(ROOT / '.cache/xnu-work/osfmk'), '-I', str(OUT)]
+                    '-I', str(record['directory']), '-I', str(ROOT / '.cache/xnu-work/osfmk'), '-I', str(OUT), '-I', str(packages[0].parent)]
 cpufreq_command += suppressions2
 run(cpufreq_command, cwd=record['directory'])
 
@@ -490,7 +490,7 @@ for service_name in ('BacklightProbe', 'ButtonProbe'):
     service_command += ['-mgeneral-regs-only', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
                         '-Wno-c99-designator', '-Wno-reorder-init-list',
                         '-Wno-deprecated-enum-enum-conversion', '-Wno-missing-designated-field-initializers',
-                        '-I', str(record['directory']), '-I', str(ROOT / '.cache/xnu-work/osfmk'), '-I', str(OUT)]
+                        '-I', str(record['directory']), '-I', str(ROOT / '.cache/xnu-work/osfmk'), '-I', str(OUT), '-I', str(packages[0].parent)]
     service_command += service_suppressions
     run(service_command, cwd=record['directory'])
     service_objects.append(service_obj)
