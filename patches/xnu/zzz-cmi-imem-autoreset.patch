@@ -58,17 +58,19 @@ index 2aac4d0..ee352a9 100644
      /* Replay everything that happened before the framebuffer was usable. */
      for (unsigned i = 0; i < bp_early_n; i++) {
          for (const char *p = bp_early[i]; *p; p++) bp_putc((unsigned char)*p);
-@@ -1169,3 +1174,110 @@ void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t
+@@ -1169,3 +1174,111 @@ void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t
  }
  
  #endif /* XNU_CMI_BOOTDIAG */
 +
-+/* ---- cmi IMEM failure mailbox + unattended warm reset (bring-up) ---- */
++/* ---- cmi IMEM failure mailbox + unattended reset-to-fastboot (bring-up) ---- */
 +/* The framebuffer is not cleared between boots, so an init failure used to
 + * smear across restarts. Instead: park the real errno in IMEM (always-on
-+ * SRAM, preserved across warm reset) at the free window 0x146bf700, draw it
-+ * on screen, then request a warm reset. On the NEXT boot the progress binder
-+ * replays it, so the errno is read without a camera or a key press. Addresses
++ * SRAM, preserved across this reset) at the free window 0x146bf700, draw it
++ * on screen, then write the "bootloader" restart reason and reset, so the
++ * stock ABL stops in fastboot instead of reloading the failing image. On the
++ * NEXT boot the progress binder replays the mailbox, so errno needs no camera
++ * or key press even if the ABL ignores the reason and retries. Addresses
 + * are the board's own DTS (linux/out/stock.dts: qcom,msm-imem@146bf000,
 + * restart_reason@65c, restart@c264000 / tcsr-boot-misc-detect@1fd3000). */
 +#define CMI_IMEM_BASE      0x146bf000ULL
@@ -78,7 +80,7 @@ index 2aac4d0..ee352a9 100644
 +#define CMI_PSHOLD_BASE    0x0c264000ULL
 +#define CMI_PSHOLD_SIZE    0x1000U
 +#define CMI_MAGIC          0x314d4349U  /* 'CMI1' little-endian */
-+#define CMI_REASON_WARM    0x77665501U  /* msm-poweroff.c NORMAL=1 */
++#define CMI_REASON_BOOTLOADER 0x77665500U  /* msm-poweroff.c: bootloader -> stock ABL fastboot */
 +
 +struct cmi_mailbox {
 +    uint32_t magic;
@@ -138,13 +140,14 @@ index 2aac4d0..ee352a9 100644
 +    uint64_t v; __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(v)); return v;
 +}
 +
-+/* Leave the SoC: write the warm reason, deassert PS_HOLD via the vendor SCM
++/* Leave the SoC: write the "bootloader" reason (0x77665500) so the stock ABL
++ * stops in fastboot instead of reloading this failing image, deassert PS_HOLD via the vendor SCM
 + * call, then the direct PS_HOLD write as fallback (measured on this firmware).
 + * Returns only if the part refuses to reset. */
 +void cmi_warm_reset(void) {
 +    vm_offset_t im = cmi_imem_map();
 +    if (im) {
-+        *((volatile uint32_t *)(im + CMI_REASON_OFF)) = CMI_REASON_WARM;
++        *((volatile uint32_t *)(im + CMI_REASON_OFF)) = CMI_REASON_BOOTLOADER;
 +        __asm__ volatile("dsb sy" ::: "memory");
 +        ml_io_unmap(im, CMI_IMEM_SIZE);
 +    }
