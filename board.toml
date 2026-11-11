@@ -44,7 +44,10 @@ archives = ["patch-cmi-chain.py", "provide-storage-audit.py",
            # attempt-5: the driver compiles its explicit unverified branch
            # (gated by two boot args), so only the two link-time no-ops remain.
            "build-cmi-root-stub.py", "build-cmi-unverified-root.py",
-           "build-libpthread-kernel.py", "component:AppleKeyStoreState"]
+           "build-libpthread-kernel.py", "component:AppleKeyStoreState",
+           # attempt-14: legacy GOP display backend; must run after the driver recipes
+           # because it reuses their compile records and the prelink candidate.
+           "build-gop-legacy-display.py"]
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 # 不引用 os:patches/xnu/series：该系列的第一项是 zzz-boot-progress.patch，它的
 # bsd/kern/bsd_init.c 补丁块以 XNU_SHENG_PMGR（sheng 的 PMGR 电源管理补丁）为前提；
@@ -132,7 +135,12 @@ kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120",
   "native-ufs-allow-unverified=1", "root-unverified=1",
   # Load the APFS kext before the owner SystemOS mount, and keep the
   # board bring-up launch-constraint bypass used by the successful exec.
-  "offline-apfs-load=1", "sheng-no-lc=1"]
+  "offline-apfs-load=1", "sheng-no-lc=1",
+  # attempt-14: legacy GOP display (CPU presentation only, no GPU needed).
+  "offline-mobile-graphics-load=1", "offline-legacy-pm=1",
+  "offline-legacy-register=1", "offline-legacy-gop=1",
+  "offline-legacy-validate=1", "offline-legacy-phase=4",
+  "offline-legacy-transfer=1", "offline-legacy-retire=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
 # 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
 panic_screen = true

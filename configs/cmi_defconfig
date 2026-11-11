@@ -31,11 +31,13 @@ CONFIG_XNU_NATIVE_UFS=y
 CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y
 CONFIG_XNU_NATIVE_RAM_BLOCK=y
 
-# GPU：SM8250 是 Adreno 650，组件目录只有 A740 实现
+# GPU：SM8250 是 Adreno 650；CPU GOP 呈现路径不需要 GPU 驱动
 # CONFIG_XNU_NATIVE_ADRENO is not set
 
-# 显示：走固件 GOP framebuffer，不需要原生显示驱动
-# CONFIG_XNU_NATIVE_LEGACY_DISPLAY is not set
+# attempt-14 显示阶段：启用 legacy GOP 后端。同 SoC 的 umi / alioth 已实机验证
+# CPU presentation 可进 Hello / 锁屏，无需 Metal GPU。归档由
+# scripts/build-gop-legacy-display.py 生成（libNativeLegacyDisplay.late.a）。
+CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y
 # CONFIG_XNU_NATIVE_MOBILE_DISPLAY is not set
 
 # mockfs is the QEMU smoke-test fixture: it needs build-mockfs-fixture.py
