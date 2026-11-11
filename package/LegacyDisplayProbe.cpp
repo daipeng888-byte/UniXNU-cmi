@@ -125,12 +125,17 @@ __attribute__((weak)) void boot_progress_cancel_scanout(void) {
 // earlier attempt failed at link time. This file sits inside an extern "C" block to the end, so
 // C++ linkage has to be asked for explicitly here, or the declaration inherits C linkage again.
 //
-// A strong reference is deliberate. A static archive member is pulled in only when something
-// references it, and a weak definition here would win over the archive rather than yield to it,
-// leaving the driver out of the kernel. The kit is always built by build-alioth-touch.py, which
-// board.toml lists as a kernel archive, so the reference always resolves.
+// A strong reference is deliberate on alioth: a static archive member is pulled in only when
+// something references it, and a weak definition here would win over the archive rather than
+// yield to it, leaving the driver out of the kernel. The kit is always built by
+// build-alioth-touch.py, which board.toml lists as a kernel archive, so the reference resolves.
+//
+// cmi ships no touch kit, so provide a weak fallback that reports the touch controller as
+// unavailable. A strong definition from the touch archive, when a board wires one in, overrides
+// this at link time; until then native-touch=1 simply gets a clean "not started" instead of a
+// link failure. This weak definition lives next to the probe so the mangled C++ name matches.
 extern "C++" {
-bool touchProbeStart(void);
+__attribute__((weak)) bool touchProbeStart(void) { return false; }
 }
 
 // The USB console, when the board links it. Weak, so a board without it still links and simply
