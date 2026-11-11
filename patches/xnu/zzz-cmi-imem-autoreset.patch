@@ -35,10 +35,10 @@ index 91498cb..59fec88 100644
  		}
 -		snprintf(bp_msg, sizeof(bp_msg), "== FROZEN errno=%d: not rebooting. read lines above ==", error);
 +		cmi_fail_mark(error, boot_id);
-+		snprintf(bp_msg, sizeof(bp_msg), "errno=%d saved; rebooting to fastboot in 8s", error);
++		snprintf(bp_msg, sizeof(bp_msg), "errno=%d saved; screen holds 120s, then fastboot", error);
  		boot_progress_stage(bp_msg);
  	}
-+	cmi_diag_hold_then_reset(8);
++	cmi_diag_hold_then_reset(120);
  	for (;;) {
  	}
  }
@@ -58,7 +58,7 @@ index 2aac4d0..ee352a9 100644
      /* Replay everything that happened before the framebuffer was usable. */
      for (unsigned i = 0; i < bp_early_n; i++) {
          for (const char *p = bp_early[i]; *p; p++) bp_putc((unsigned char)*p);
-@@ -1169,3 +1174,111 @@ void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t
+@@ -1169,3 +1174,134 @@ void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t
  }
  
  #endif /* XNU_CMI_BOOTDIAG */
@@ -79,6 +79,10 @@ index 2aac4d0..ee352a9 100644
 +#define CMI_REASON_OFF     0x65cU
 +#define CMI_PSHOLD_BASE    0x0c264000ULL
 +#define CMI_PSHOLD_SIZE    0x1000U
++#define CMI_WDT_BASE       0x17c10000ULL  /* qcom,wdt@17c10000 (stock.dts:1745) */
++#define CMI_WDT_SIZE       0x1000U
++#define CMI_WDT_EN         0x8U            /* kpss: RST 0x4, EN 0x8, BARK 0x10, BITE 0x14 */
++#define CMI_WDT_RST        0x4U
 +#define CMI_MAGIC          0x314d4349U  /* 'CMI1' little-endian */
 +#define CMI_REASON_BOOTLOADER 0x77665500U  /* msm-poweroff.c: bootloader -> stock ABL fastboot */
 +
@@ -164,11 +168,28 @@ index 2aac4d0..ee352a9 100644
 +}
 +
 +/* Hold the panel for `seconds` (counter-based, no timer/sleep dependency),
-+ * then reset. Gives a human a moment to read the errno on screen. */
++ * then reset. A 120 s hold outlasts the APSS watchdog's typical 20-30 s
++ * bark/bite, so if the firmware armed it we must keep petting it or the part
++ * reboots before the screen has been readable. Pet ONLY if EN bit0 is already
++ * set (i.e. firmware actually armed it) -- never arm one ourselves. If the
++ * map fails, or a watchdog still fires, the errno is already safe in IMEM and
++ * the next boot's bind() replays it, so losing this first hold is not fatal. */
 +void cmi_diag_hold_then_reset(unsigned seconds) {
 +    uint64_t f = cmi_cntfrq(); if (!f) f = 19200000ULL;
-+    uint64_t end = cmi_cntpct() + f * (uint64_t)seconds;
-+    while (cmi_cntpct() < end) { __asm__ volatile("yield"); }
++    uint64_t start = cmi_cntpct(), end = start + f * (uint64_t)seconds;
++    uint64_t pet_every = f / 2, last_pet = start;   /* every 0.5 s */
++    volatile uint32_t *wdt = (volatile uint32_t *)
++        ml_io_map_unmappable((vm_offset_t)CMI_WDT_BASE, (vm_size_t)CMI_WDT_SIZE, 7);
++    int feeding = wdt && (wdt[CMI_WDT_EN / 4] & 1u);
++    while (cmi_cntpct() < end) {
++        if (feeding && (cmi_cntpct() - last_pet) >= pet_every) {
++            wdt[CMI_WDT_RST / 4] = 1;
++            __asm__ volatile("dsb sy" ::: "memory");
++            last_pet = cmi_cntpct();
++        }
++        __asm__ volatile("yield");
++    }
++    if (wdt) ml_io_unmap((vm_offset_t)wdt, CMI_WDT_SIZE);
 +    cmi_warm_reset();
 +}
 +
