@@ -18,9 +18,3 @@ cmi-root-unverified.patch
 # zzz 前缀保证最后应用。
 zzz-cmi-boot-progress.patch
 
-# Unattended init-failure diagnosis: freeze instead of panic/reboot, then park
-# the real errno in IMEM and reset to the stock ABL's fastboot. The next boot's
-# progress binder replays the mailbox. Applied LAST in this order: freeze edits
-# load_init_program's panic, imem adds the extern helpers it calls in startup.c.
-zzz-cmi-freeze-init-fail.patch
-zzz-cmi-imem-autoreset.patch
