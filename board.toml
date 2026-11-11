@@ -45,8 +45,11 @@ archives = ["patch-cmi-chain.py", "provide-storage-audit.py",
            # (gated by two boot args), so only the two link-time no-ops remain.
            "build-cmi-root-stub.py", "build-cmi-unverified-root.py",
            "build-libpthread-kernel.py", "component:AppleKeyStoreState",
-           # attempt-14: legacy GOP display backend; must run after the driver recipes
-           # because it reuses their compile records and the prelink candidate.
+           # attempt-14: publish the original display-family reference first
+           # (cmi does not emit build/xnu-prelink/*-candidate.macho itself).
+           "build-cmi-display-candidate.py",
+           # legacy GOP display backend; must run after the driver recipes
+           # because it reuses their compile records and the reference above.
            "build-gop-legacy-display.py"]
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 # 不引用 os:patches/xnu/series：该系列的第一项是 zzz-boot-progress.patch，它的
