@@ -1,0 +1,31 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 8bba078..9131818 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -7194,7 +7194,25 @@ load_init_program(proc_t p)
+ 		}
+ 	}
+ 
+-	panic("Process 1 exec of %s failed, errno %d", ((i == 0) ? "<null>" : init_programs[i - 1]), error);
++	/* CMI DIAGNOSTIC FREEZE: replace the panic()/reboot with a screen
++	 * freeze so the real errno stays visible. The framebuffer is NOT
++	 * cleared between reboots, which is what smeared the earlier logs. */
++	{
++		char bp_msg[192];
++		int j;
++		boot_progress_stage("============================================");
++		snprintf(bp_msg, sizeof(bp_msg), "CMI INIT FAILED: errno=%d  (ENOENT=2 ENOEXEC=8 EACCES=13)", error);
++		boot_progress_stage(bp_msg);
++		boot_progress_stage("attempted init_programs[]:");
++		for (j = 0; j < (int)(sizeof(init_programs) / sizeof(init_programs[0])); j++) {
++			snprintf(bp_msg, sizeof(bp_msg), "  %d: %s", j, init_programs[j]);
++			boot_progress_stage(bp_msg);
++		}
++		snprintf(bp_msg, sizeof(bp_msg), "== FROZEN errno=%d: not rebooting. read lines above ==", error);
++		boot_progress_stage(bp_msg);
++	}
++	for (;;) {
++	}
+ }
+ 
+ /*
