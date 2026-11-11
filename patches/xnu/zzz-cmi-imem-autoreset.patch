@@ -1,0 +1,171 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 91498cb..59fec88 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -1,5 +1,7 @@
+ /* BSD component: osfmk/kern is not on this component's include path; use local externs. */
+ extern void boot_progress_stage(const char *);
++extern int  cmi_fail_mark(int, uint64_t);
++extern void cmi_diag_hold_then_reset(unsigned);
+ extern void boot_progress_process_stage(int, const char *, const char *);
+ /*
+  * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
+@@ -7199,12 +7201,15 @@ load_init_program(proc_t p)
+ 		}
+ 	}
+ 
+-	/* CMI DIAGNOSTIC FREEZE: replace the panic()/reboot with a screen
+-	 * freeze so the real errno stays visible. The framebuffer is NOT
+-	 * cleared between reboots, which is what smeared the earlier logs. */
++	/* CMI DIAGNOSTIC: park the real errno in IMEM, draw it, then warm-reset
++	 * to fastboot. The next boot's progress binder replays the mailbox, so the
++	 * errno survives without a camera or a held power key. Helpers live in
++	 * osfmk/kern/startup.c (osfmk owns the MMIO mapping APIs). */
+ 	{
+ 		char bp_msg[192];
+ 		int j;
++		uint64_t boot_id;
++		__asm__ volatile("mrs %0, cntpct_el0" : "=r"(boot_id));
+ 		boot_progress_stage("============================================");
+ 		snprintf(bp_msg, sizeof(bp_msg), "CMI INIT FAILED: errno=%d  (ENOENT=2 ENOEXEC=8 EACCES=13)", error);
+ 		boot_progress_stage(bp_msg);
+@@ -7213,9 +7218,11 @@ load_init_program(proc_t p)
+ 			snprintf(bp_msg, sizeof(bp_msg), "  %d: %s", j, init_programs[j]);
+ 			boot_progress_stage(bp_msg);
+ 		}
+-		snprintf(bp_msg, sizeof(bp_msg), "== FROZEN errno=%d: not rebooting. read lines above ==", error);
++		cmi_fail_mark(error, boot_id);
++		snprintf(bp_msg, sizeof(bp_msg), "errno=%d saved; rebooting to fastboot in 8s", error);
+ 		boot_progress_stage(bp_msg);
+ 	}
++	cmi_diag_hold_then_reset(8);
+ 	for (;;) {
+ 	}
+ }
+diff --git a/osfmk/kern/startup.c b/osfmk/kern/startup.c
+index 2aac4d0..ee352a9 100644
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -1131,6 +1131,11 @@ void boot_progress_bind(uintptr_t base, unsigned w, unsigned h, unsigned rowbyte
+     const char *hdr = "* cmi boot progress [ATTEMPT9-BOOTDIAG]";
+     for (const char *p = hdr; *p; p++) bp_putc((unsigned char)*p);
+     bp_putc('\n');
++    { int cmi_fail_replay(char *, unsigned);  /* fwd: defined after #endif */
++      char prev[128]; if (cmi_fail_replay(prev, sizeof(prev))) {
++        bp_line(prev, '!');
++        bp_line("errno was captured before auto-reset", '!');
++    } }
+     /* Replay everything that happened before the framebuffer was usable. */
+     for (unsigned i = 0; i < bp_early_n; i++) {
+         for (const char *p = bp_early[i]; *p; p++) bp_putc((unsigned char)*p);
+@@ -1169,3 +1174,110 @@ void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t
+ }
+ 
+ #endif /* XNU_CMI_BOOTDIAG */
++
++/* ---- cmi IMEM failure mailbox + unattended warm reset (bring-up) ---- */
++/* The framebuffer is not cleared between boots, so an init failure used to
++ * smear across restarts. Instead: park the real errno in IMEM (always-on
++ * SRAM, preserved across warm reset) at the free window 0x146bf700, draw it
++ * on screen, then request a warm reset. On the NEXT boot the progress binder
++ * replays it, so the errno is read without a camera or a key press. Addresses
++ * are the board's own DTS (linux/out/stock.dts: qcom,msm-imem@146bf000,
++ * restart_reason@65c, restart@c264000 / tcsr-boot-misc-detect@1fd3000). */
++#define CMI_IMEM_BASE      0x146bf000ULL
++#define CMI_IMEM_SIZE      0x1000U
++#define CMI_MAIL_OFF       0x700U   /* free: used cells end at 0x6d0+0xc */
++#define CMI_REASON_OFF     0x65cU
++#define CMI_PSHOLD_BASE    0x0c264000ULL
++#define CMI_PSHOLD_SIZE    0x1000U
++#define CMI_MAGIC          0x314d4349U  /* 'CMI1' little-endian */
++#define CMI_REASON_WARM    0x77665501U  /* msm-poweroff.c NORMAL=1 */
++
++struct cmi_mailbox {
++    uint32_t magic;
++    int32_t  errno_val;
++    uint64_t boot_id;
++    uint32_t phase;
++    uint32_t reserved;
++};
++
++static vm_offset_t cmi_imem_map(void) {
++    return ml_io_map_unmappable((vm_offset_t)CMI_IMEM_BASE,
++                                (vm_size_t)CMI_IMEM_SIZE, 7 /* VM_WIMG_IO */);
++}
++
++/* Park the failure. 0 = written and read back. */
++static int cmi_fail_mark(int err, uint64_t boot_id) {
++    vm_offset_t m = cmi_imem_map();
++    if (!m) return 1;
++    volatile struct cmi_mailbox *mb =
++        (volatile struct cmi_mailbox *)(m + CMI_MAIL_OFF);
++    mb->errno_val = err;
++    mb->boot_id   = boot_id;
++    mb->phase     = 1;  /* load_init_program */
++    __asm__ volatile("dsb sy" ::: "memory");
++    mb->magic     = CMI_MAGIC;   /* publish last */
++    __asm__ volatile("dsb sy" ::: "memory");
++    int ok = (mb->magic == CMI_MAGIC);
++    ml_io_unmap(m, CMI_IMEM_SIZE);
++    return ok ? 0 : 2;
++}
++
++/* Replay a failure from the previous boot. Returns 1 if found (and clears
++ * it so it shows once); fills out[cap]. */
++int cmi_fail_replay(char *out, unsigned cap) {
++    vm_offset_t m = cmi_imem_map();
++    if (!m) return 0;
++    volatile struct cmi_mailbox *mb =
++        (volatile struct cmi_mailbox *)(m + CMI_MAIL_OFF);
++    int found = (mb->magic == CMI_MAGIC);
++    int e = 0; uint64_t bid = 0; unsigned ph = 0;
++    if (found) {
++        e = (int)mb->errno_val; bid = mb->boot_id; ph = mb->phase;
++        mb->magic = 0;   /* consume once */
++        __asm__ volatile("dsb sy" ::: "memory");
++    }
++    ml_io_unmap(m, CMI_IMEM_SIZE);
++    if (found && out && cap)
++        snprintf(out, cap, "PREV BOOT FAIL errno=%d phase=%u id=%llx",
++                 e, ph, (unsigned long long)bid);
++    return found;
++}
++
++static uint64_t cmi_cntpct(void) {
++    uint64_t v; __asm__ volatile("mrs %0, cntpct_el0" : "=r"(v)); return v;
++}
++static uint64_t cmi_cntfrq(void) {
++    uint64_t v; __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(v)); return v;
++}
++
++/* Leave the SoC: write the warm reason, deassert PS_HOLD via the vendor SCM
++ * call, then the direct PS_HOLD write as fallback (measured on this firmware).
++ * Returns only if the part refuses to reset. */
++void cmi_warm_reset(void) {
++    vm_offset_t im = cmi_imem_map();
++    if (im) {
++        *((volatile uint32_t *)(im + CMI_REASON_OFF)) = CMI_REASON_WARM;
++        __asm__ volatile("dsb sy" ::: "memory");
++        ml_io_unmap(im, CMI_IMEM_SIZE);
++    }
++    /* SCM_SIP_FNID(SCM_SVC_PWR=0x9, SCM_IO_DEASSERT_PS_HOLD=2) | SMC64|atomic */
++    register uint64_t x0 __asm__("x0") = 0x02000002ULL | 0x80000000ULL | 0x40000000ULL;
++    register uint64_t x1 __asm__("x1") = 1, x2 __asm__("x2") = 0, x3 __asm__("x3") = 0;
++    __asm__ volatile("smc #0" : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
++                     :: "memory", "x4","x5","x6","x7","x8","x9","x10",
++                        "x11","x12","x13","x14","x15","x16","x17");
++    vm_offset_t ph = ml_io_map_unmappable((vm_offset_t)CMI_PSHOLD_BASE,
++                                          (vm_size_t)CMI_PSHOLD_SIZE, 7);
++    if (ph) { *(volatile uint32_t *)ph = 0; __asm__ volatile("dsb sy" ::: "memory"); }
++    for (;;) { __asm__ volatile("wfe"); }  /* last resort */
++}
++
++/* Hold the panel for `seconds` (counter-based, no timer/sleep dependency),
++ * then reset. Gives a human a moment to read the errno on screen. */
++void cmi_diag_hold_then_reset(unsigned seconds) {
++    uint64_t f = cmi_cntfrq(); if (!f) f = 19200000ULL;
++    uint64_t end = cmi_cntpct() + f * (uint64_t)seconds;
++    while (cmi_cntpct() < end) { __asm__ volatile("yield"); }
++    cmi_warm_reset();
++}
++
