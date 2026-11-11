@@ -148,9 +148,12 @@ kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120",
   "offline-legacy-register=1", "offline-legacy-gop=1",
   "offline-legacy-validate=1", "offline-legacy-phase=4",
   "offline-legacy-transfer=1", "offline-legacy-retire=1"]
-# 内核 panic 直接画到屏幕上（格式 2 的官方开关）；cmi 还没有面板驱动，
-# 这是唯一能看到内核报错的路。与 kits/cmi/CmiKlog.c 的进度块叠加使用。
-panic_screen = true
+# 内核 panic 直接画到屏幕上（格式 2 的官方开关）。注意：patch-xnu-entry-probe.py
+# 把 panic-screen 注入代码（0xa37 字节）放进内核 entry 的零填充区，但该区在 cmi
+# 内核里只有 0xa30 字节可用，固定溢出 7 字节导致 payload-patch 失败（run 42955441123）。
+# 暂时关闭以让构建通过、尽快拿到可刷镜像验证图形后端；panic_screen 仅用于把 panic
+# 画到屏上（诊断用途），与显示后端本身无关，关掉不影响图形界面。后续需调整 cave 尺寸再加回。
+panic_screen = false
 # 三 bank 求和，实测见 inputs.md 第 3 节（本机 8 GB SKU）。
 # 12 GB SKU 需重新求和。
 dram_size = "0x1FBB00000"
