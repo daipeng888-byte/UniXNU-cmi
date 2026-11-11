@@ -524,10 +524,26 @@ require(code(presenter.read_bytes(), macho(presenter.read_bytes())) ==
 #     not exist on the Linux builder. Point it at the llvm that is on PATH instead.
 # cmi: display-only archive; touch/HID is a separate later stage.
 
+# cmi: a Mach-O static kernel link refuses to leave a weak_import undefined.
+# The board-optional probe hooks (touch / GPU / PCIe / USB debug / UFS DPU /
+# SMMU) have no selected provider on this board yet. Provide weak no-ops in
+# the same force-loaded archive; a real provider later overrides them.
+stub_sources = [packages[0].parent / name for name in
+                ('CmiWeakStubs.c', 'LinkStubs.c', 'BootProgressStubs.c')]
+stub_objects = []
+for stub_source in stub_sources:
+    require(stub_source.is_file(), 'missing weak stub source ' + str(stub_source))
+    stub_obj = OUT / (stub_source.stem + '.o')
+    run(['xcrun', '--sdk', 'iphoneos', 'clang', '-arch', 'arm64', '-mkernel',
+         '-miphoneos-version-min=17.0', '-DXNU_NATIVE_LEGACY_DISPLAY=1',
+         '-Os', '-w', '-c', stub_source, '-o', stub_obj])
+    stub_objects.append(stub_obj)
+print('cmi weak stubs:', ', '.join(o.name for o in stub_objects))
+
 archive = OUT / 'libNativeLegacyDisplay.late.a'
 archive.unlink(missing_ok=True)
 run(['xcrun', 'ar', 'rcs', archive, late, OUT / 'original-bindings.o', probe_obj, dpu_obj, cpufreq_obj,
-     presenter_late, keystore_probe_obj, keystore_late, *service_objects])
+     presenter_late, keystore_probe_obj, keystore_late, *service_objects, *stub_objects])
 
 sources = [ROOT / 'drivers/GopFramebuffer/NativeLegacyDisplay.cpp',
            ROOT / 'drivers/GopFramebuffer/NativeLegacyRequest.h',
