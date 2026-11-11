@@ -22,7 +22,11 @@ kit = "cmi"
 # 需要 VerifiedRoot kit、根策略包、libBootProgress（boot-progress 尚未移植）与
 # IOStorageFamily，单开 UFS 在链接阶段必然失败。详见 porting.toml 的 storage 区。
 include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
-           "ShengUfs", "VirtioMmioBlock", "RamBlock", "VerifiedRoot", "ShengPreflight", "AppleKeyStoreState"]
+           "ShengUfs", "VirtioMmioBlock", "RamBlock", "VerifiedRoot", "ShengPreflight", "AppleKeyStoreState",
+           # attempt-14e: needed for drivers/GopFramebuffer/NativeLegacyDisplay.cpp
+           # (build-gop-legacy-display.py compiles it into libNativeLegacyDisplay.late.a).
+           # build = [] so this only makes the sources available in the tree.
+           "GopFramebuffer"]
 
 [kernel]
 defconfig = "cmi_defconfig"
