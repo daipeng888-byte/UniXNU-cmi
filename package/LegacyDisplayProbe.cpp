@@ -1252,12 +1252,14 @@ void native_legacy_display_late_probe(void) {
 	// driver adaption guide names as the second of the two start paths and places in this
 	// function alongside the other board initialisation calls. Opt-in through
 	// offline-hid-input=1. Inside this file's extern "C" block, so no linkage specifier here.
-	extern int native_hid_input_probe(void);
-	native_hid_input_probe();
+	// cmi: touch/HID publisher is a later stage; keep the link optional.
+	extern int native_hid_input_probe(void) __attribute__((weak_import));
+	if (&native_hid_input_probe) native_hid_input_probe();
 
 	// The A650 probe, at the point the reference board calls it. Opt-in through pipa-gpu=<mode>.
-	extern void native_gpu_probe(void);
-	native_gpu_probe();
+	// cmi: CPU presentation only, no A650 GPU driver in this tree.
+	extern void native_gpu_probe(void) __attribute__((weak_import));
+	if (&native_gpu_probe) native_gpu_probe();
 
 	// The panel brightness service and the physical buttons. Both are board services the porting
 	// guide requires (display.md steps 3-4, input.md step 4), both opt-in through their own boot
@@ -1269,8 +1271,9 @@ void native_legacy_display_late_probe(void) {
 	if (&alioth_buttons_probe) alioth_buttons_probe();
 
 	// The Wi-Fi controller's power and clock steps. Opt-in through pcie=<n>; step 1 only reads.
-	extern void alioth_pcie_init(void);
-	alioth_pcie_init();
+	// cmi: no QCA6390/PCIe bring-up in this tree.
+	extern void alioth_pcie_init(void) __attribute__((weak_import));
+	if (&alioth_pcie_init) alioth_pcie_init();
 	{
 		/* The QCA6390 board layer (drivers/AliothWifi). It needs the trained link and the
 		 * windows the step above leaves, so it runs right after it; the argument keeps the

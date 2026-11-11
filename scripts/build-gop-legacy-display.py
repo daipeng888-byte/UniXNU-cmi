@@ -399,10 +399,7 @@ run(dpu_command, cwd=record['directory'])
 # It is what starts the statically linked publisher: an IOHIDDevice compiled into the kernel has
 # no personality, so IOKit never matches it and the board has to invoke it, which is the second
 # of the two start paths the driver adaption guide names.
-hid_probe_obj = OUT / 'HidInputProbe.o'
-hid_probe_command = [str(packages[0].parent / 'HidInputProbe.cpp') if x == str(probe_source)
-                     else str(hid_probe_obj) if x == str(probe_obj) else x for x in command]
-run(hid_probe_command, cwd=record['directory'])
+# cmi: HID publisher deferred (no ShengHidInput driver in this tree).
 
 # The AppleKeyStore stand-in. AppleKeyStoreState is a selected component in board.toml, but a
 # static archive is only pulled in when something references it: the component provides an
@@ -525,30 +522,12 @@ require(code(presenter.read_bytes(), macho(presenter.read_bytes())) ==
 #     and the whole 207-slot ABI against it, so nothing is taken on trust.
 #   * ``brew --prefix llvm``: the recipe locates llvm-objcopy through Homebrew, which does
 #     not exist on the Linux builder. Point it at the llvm that is on PATH instead.
-hid_dir = ROOT / 'build/sheng-hid-input'
-# Publish this board's prelink candidate under the name the HID recipe globs, here rather than
-# in a sibling archive step: this recipe runs earlier in the list than the touch kit's, so an
-# alias refreshed there would be one build behind and the recipe's own sha check would refuse
-# it. The candidate on disk is the previous kernel's, which is exactly what archives validate.
-_prelink = ROOT / 'build/xnu-prelink'
-_candidate = _prelink / 'native-owner-mobile-graphics-candidate.macho'
-if _candidate.is_file():
-    _alias = _prelink / 'native-owner-ufs-cpu-desktop-v9-hid-init-candidate'
-    _link = _alias.with_suffix('.macho')
-    if _link.is_symlink() or _link.exists():
-        _link.unlink()
-    _link.symlink_to(_candidate.name)
-    _alias.with_suffix('.json').write_bytes(_candidate.with_suffix('.json').read_bytes())
-hid = subprocess.run(['python3', ROOT / 'scripts/build-sheng-hid-input.py'],
-                     capture_output=True, text=True)
-print(hid.stdout, end='')
-require(hid.returncode == 0, 'build-sheng-hid-input.py failed: ' + (hid.stderr or hid.stdout)[-1200:])
+# cmi: display-only archive; touch/HID is a separate later stage.
 
 archive = OUT / 'libNativeLegacyDisplay.late.a'
 archive.unlink(missing_ok=True)
-run(['xcrun', 'ar', 'rcs', archive, late, OUT / 'original-bindings.o', probe_obj, dpu_obj, hid_probe_obj, cpufreq_obj,
-     presenter_late, hid_dir / 'NativeHidInput.late.o', hid_dir / 'hid-original-bindings.o',
-     keystore_probe_obj, keystore_late, *service_objects])
+run(['xcrun', 'ar', 'rcs', archive, late, OUT / 'original-bindings.o', probe_obj, dpu_obj, cpufreq_obj,
+     presenter_late, keystore_probe_obj, keystore_late, *service_objects])
 
 sources = [ROOT / 'drivers/GopFramebuffer/NativeLegacyDisplay.cpp',
            ROOT / 'drivers/GopFramebuffer/NativeLegacyRequest.h',
