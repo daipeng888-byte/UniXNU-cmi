@@ -18,3 +18,10 @@ cmi-root-unverified.patch
 # zzz 前缀保证最后应用。
 zzz-cmi-boot-progress.patch
 
+# UI bring-up: the legacy GOP backend writes compositor frames into the same
+# framebuffer this renderer uses for stage text. The inlined build lacked the
+# handoff symbols, so the diagnostic renderer kept painting over the UI and the
+# panel only ever showed scrolling kernel text. Yield the framebuffer on the
+# backend's prepare_scanout() and never take it back. Must follow boot-progress.
+zzz-cmi-display-handoff.patch
+

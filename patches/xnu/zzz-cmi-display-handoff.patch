@@ -1,0 +1,73 @@
+diff --git a/osfmk/kern/boot_progress.h b/osfmk/kern/boot_progress.h
+index 9e25283..543ba6d 100644
+--- a/osfmk/kern/boot_progress.h
++++ b/osfmk/kern/boot_progress.h
+@@ -23,6 +23,8 @@ void boot_progress_user_abort(void *, unsigned, uint64_t);
+ void boot_progress_critical_exit(int, char *, unsigned long);
+ void boot_progress_process_stage(int, const char *, const char *);
+ void boot_progress_exit(int, const char *, int, unsigned, uint64_t);
++int  boot_progress_prepare_scanout(void);
++void boot_progress_cancel_scanout(void);
+ #else
+ #define boot_progress_init() ((void)0)
+ #define boot_progress_start() ((void)0)
+@@ -37,5 +39,7 @@ static inline void boot_progress_putc(char c) { (void)c; }
+ #define boot_progress_critical_exit(...) ((void)0)
+ #define boot_progress_process_stage(...) ((void)0)
+ #define boot_progress_exit(...) ((void)0)
++#define boot_progress_prepare_scanout() 1
++#define boot_progress_cancel_scanout() ((void)0)
+ #endif
+ #endif
+diff --git a/osfmk/kern/startup.c b/osfmk/kern/startup.c
+index 2aac4d0..b192787 100644
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -1049,6 +1049,10 @@ static volatile uintptr_t bp_base;
+ static unsigned bp_w, bp_h, bp_rb, bp_top;
+ static int      bp_bound;
+ static unsigned bp_x, bp_y;
++/* Set once the compositor asks for the framebuffer. The diagnostic renderer
++ * must then stop drawing forever: backboardd's swaps go into this same GOP
++ * framebuffer, and any further kernel text would paint over the UI. */
++static int  bp_display_owned;
+ 
+ /* Stages that fire before the framebuffer is bound (arm_vm_init, early
+  * bootstrap) would otherwise be lost. Buffer them and replay at bind time. */
+@@ -1120,6 +1124,7 @@ void boot_progress_start(void) { }
+ int  boot_progress_active(void) { return bp_bound; }
+ 
+ void boot_progress_bind(uintptr_t base, unsigned w, unsigned h, unsigned rowbytes, unsigned depth) {
++    if (bp_display_owned) { bp_bound = 0; return; }  /* compositor owns the panel */
+     if (!base || depth != 32 || !w || !h || !rowbytes) { bp_bound = 0; return; }
+     if (bp_bound && base == bp_base && w == bp_w && h == bp_h && rowbytes == bp_rb) return;
+     bp_base = base; bp_w = w; bp_h = h; bp_rb = rowbytes;
+@@ -1168,4 +1173,28 @@ void boot_progress_exit(int pid, const char *name, int rv, unsigned ns, uint64_t
+     if (boot_progress_active()) { const char *m = "= proc exit\n"; for (; *m; m++) bp_putc(*m); }
+ }
+ 
++
++/* ===== display handoff: stop the diagnostic renderer so the UI shows ===== */
++/* The legacy GOP backend writes compositor frames straight into the firmware
++ * framebuffer, which this renderer also uses for its stage text. The backend's
++ * native_legacy_prepare_scanout() calls boot_progress_prepare_scanout() right
++ * before a swap; the full BootProgress.c yields there. The inlined cmi build
++ * had neither symbol, so prepare_scanout() saw a null weak_import, assumed the
++ * handoff succeeded, submitted frames, and this renderer kept drawing over them.
++ * Result: the panel showed scrolling kernel command text and never the UI. */
++int boot_progress_prepare_scanout(void) {
++    if (!bp_display_owned) {
++        bp_display_owned = 1;
++        bp_bound = 0;          /* bp_putc/bp_line become no-ops from here on */
++        bp_early_n = 0;
++    }
++    return 1;                 /* handoff accepted: let the swap proceed */
++}
++void boot_progress_cancel_scanout(void) {
++    /* Do not restore bp_bound: resuming the text renderer would cover the UI.
++     * Keep ownership so a later bind() cannot steal the panel back. */
++    bp_display_owned = 1;
++    bp_bound = 0;
++}
++
+ #endif /* XNU_CMI_BOOTDIAG */
