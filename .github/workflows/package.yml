@@ -79,8 +79,11 @@ jobs:
           fi
       - name: data seed
         run: |
-          curl -fsSL -o device/scripts/owner-data-8g.dbr https://raw.githubusercontent.com/Riceneeder/unixnu-tb128fu-ci/80cf77545ad7af876c8f582b0d1a1ed7bfb92264/build-inputs/owner-data-8g.dbr
-          test "$(stat -f%z device/scripts/owner-data-8g.dbr)" = 1040512
+          # owner-data-8g.dbr is now committed at device/scripts/owner-data-8g.dbr
+          # (the upstream Riceneeder/unixnu-tb128fu-ci source was deleted -> 404).
+          # Verify it is present and the expected size before packaging.
+          test -f device/scripts/owner-data-8g.dbr || { echo 'owner-data-8g.dbr missing from repo'; exit 1; }
+          test "$(stat -f%z device/scripts/owner-data-8g.dbr)" = 1040512 || { echo 'owner-data-8g.dbr wrong size'; exit 1; }
       - name: package
         working-directory: device
         env:
