@@ -147,7 +147,8 @@ kernel_args = ["-v", "serial=3", "keepsyms=1", "kt_fixed_zones=120",
   "offline-mobile-graphics-load=1", "offline-legacy-pm=1",
   "offline-legacy-register=1", "offline-legacy-gop=1",
   "offline-legacy-validate=1", "offline-legacy-phase=4",
-  "offline-legacy-transfer=1", "offline-legacy-retire=1"]
+  "offline-legacy-transfer=1", "offline-legacy-retire=1",
+  "offline-legacy-cpu-present=1"]
 # 内核 panic 直接画到屏幕上（格式 2 的官方开关）。注意：patch-xnu-entry-probe.py
 # 把 panic-screen 注入代码（0xa37 字节）放进内核 entry 的零填充区，但该区在 cmi
 # 内核里只有 0xa30 字节可用，固定溢出 7 字节导致 payload-patch 失败（run 42955441123）。
